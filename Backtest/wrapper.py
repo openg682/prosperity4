@@ -42,11 +42,16 @@ def wrap(trader_class) -> type:
             original_mm   = trader_class.market_make
 
             # Intercept market_make to capture what it appends to its orders list
-            def capturing_mm(self_ref, product, orders, bid, ask, position, bv, sv):
+            def capturing_mm(self_ref, *args, **kwargs):
+                # Find the orders list argument (always a list)
+                orders = next(a for a in args if isinstance(a, list))
                 before = len(orders)
-                result = original_mm(self_ref, product, orders, bid, ask, position, bv, sv)
-                new_passive = orders[before:]   # orders added this call
-                passive_orders.setdefault(product, []).extend(new_passive)
+                result = original_mm(self_ref, *args, **kwargs)
+                new_passive = orders[before:]
+                # Infer product from the new orders if possible
+                if new_passive:
+                    product = new_passive[0].symbol
+                    passive_orders.setdefault(product, []).extend(new_passive)
                 return result
 
             self.market_make = types.MethodType(capturing_mm, self)
