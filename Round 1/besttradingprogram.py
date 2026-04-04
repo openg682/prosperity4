@@ -8,33 +8,24 @@ class Product:
     TOMATOES = "TOMATOES"
     EMERALDS = "EMERALDS"
 
-# ── Parameters ────────────────────────────────────────────────────────────────
-#
-# TOMATOES  volatile, drifting mid → use rolling EMA as fair value
-# EMERALDS  rock-solid at 10000; book always 9992 bid / 10008 ask → quote
-#           inside that spread (default_edge 6 → quotes at 9994/10006)
-#           so we actually get filled instead of sitting at queue back
-# ──────────────────────────────────────────────────────────────────────────────
 PARAMS = {
     Product.TOMATOES: {
-        # fair_value computed dynamically via EMA; seed only used on tick 0
         "fair_value_seed": 5000,
-        "ema_alpha": 0.15,          # ~6-tick half-life; tracks trend without overfit
-        "take_width": 6,            # aggress if best ask/bid crosses EMA by ≥6
-        "disregard_edge": 15,       # ignore book noise within 15 of fair
-        "join_edge": 5,             # join best level if ≤5 from our default edge
-        "default_edge": 7,          # default quote offset when no good level exists
+        "ema_alpha": 0.15,
+        "take_width": 6,
+        "disregard_edge": 15,
+        "join_edge": 5,
+        "default_edge": 7,
     },
     Product.EMERALDS: {
-        "fair_value": 10000,        # completely stable, never changes
-        "take_width": 2,            # only aggress genuine mispricings
-        "disregard_edge": 6,        # best bids/asks sit at ±8; look outside ±6
+        "fair_value": 10000,
+        "take_width": 2,
+        "disregard_edge": 6,
         "join_edge": 2,
-        "default_edge": 6,          # quote 9994/10006 → improves 9992/10008 book
+        "default_edge": 6,
     },
 }
 
-# Exchange-enforced hard position limits (both confirmed as 80)
 POSITION_LIMITS: Dict[str, int] = {
     Product.TOMATOES: 80,
     Product.EMERALDS: 80,
@@ -46,14 +37,10 @@ class Trader:
         self.params = PARAMS
         self.LIMIT = POSITION_LIMITS
 
-    # ── Fair value: static (EMERALDS) or EMA (TOMATOES) ───────────────────────
-    def get_fair_value(
-        self, product: str, order_depth: OrderDepth, trader_state: dict
-    ) -> float:
+    def get_fair_value(self, product, order_depth, trader_state):
         if product == Product.EMERALDS:
             return self.params[product]["fair_value"]
 
-        # TOMATOES: EMA of mid-price, persisted across ticks via traderData
         p = self.params[product]
         alpha = p["ema_alpha"]
 
@@ -72,17 +59,7 @@ class Trader:
         trader_state[ema_key] = new_ema
         return new_ema
 
-    # ── Generic order-taking ───────────────────────────────────────────────────
-    def take_best_orders(
-        self,
-        product: str,
-        fair_value: float,
-        take_width: float,
-        orders: List[Order],
-        order_depth: OrderDepth,
-        position: int,
-    ) -> Tuple[int, int]:
-        """Aggress the best ask/bid if it crosses fair_value ± take_width."""
+    def take_best_orders(self, product, fair_value, take_width, orders, order_depth, position):
         limit = self.LIMIT[product]
         buy_volume = sell_volume = 0
 
@@ -109,18 +86,7 @@ class Trader:
 
         return buy_volume, sell_volume
 
-    # ── Generic passive quoting ────────────────────────────────────────────────
-    def market_make(
-        self,
-        product: str,
-        orders: List[Order],
-        bid: float,
-        ask: float,
-        position: int,
-        buy_volume: int,
-        sell_volume: int,
-    ) -> Tuple[int, int]:
-        """Post resting bid and ask for remaining capacity."""
+    def market_make(self, product, orders, bid, ask, position, buy_volume, sell_volume):
         limit = self.LIMIT[product]
         buy_qty = limit - (position + buy_volume)
         if buy_qty > 0:
@@ -132,24 +98,8 @@ class Trader:
 
         return buy_volume, sell_volume
 
-    def make_orders(
-        self,
-        product: str,
-        order_depth: OrderDepth,
-        fair_value: float,
-        position: int,
-        buy_volume: int,
-        sell_volume: int,
-        disregard_edge: float,
-        join_edge: float,
-        default_edge: float,
-    ) -> Tuple[int, int]:
-        """
-        Determine bid/ask levels by inspecting the book, then call market_make.
-
-        If there is a level outside disregard_edge that is within join_edge of
-        our default quote, we join it; otherwise we undercut/overcut by 1 tick.
-        """
+    def make_orders(self, product, order_depth, fair_value, position,
+                    buy_volume, sell_volume, disregard_edge, join_edge, default_edge):
         orders: List[Order] = []
 
         asks_outside = [pr for pr in order_depth.sell_orders if pr > fair_value + disregard_edge]
@@ -167,7 +117,6 @@ class Trader:
 
         return self.market_make(product, orders, bid, ask, position, buy_volume, sell_volume)
 
-    # ── Main entry point ───────────────────────────────────────────────────────
     def run(self, state: TradingState):
         result = {}
         trader_state = jsonpickle.decode(state.traderData) if state.traderData else {}
@@ -181,12 +130,10 @@ class Trader:
             position = state.position.get(product, 0)
             p = self.params[product]
 
-            # Dynamic fair value (EMA for TOMATOES, constant for EMERALDS)
             fair_value = self.get_fair_value(product, order_depth, trader_state)
 
             buy_volume = sell_volume = 0
 
-            # 1. Take mispriced orders aggressively
             b, s = self.take_best_orders(
                 product, fair_value, p["take_width"],
                 orders, order_depth, position,
@@ -194,7 +141,6 @@ class Trader:
             buy_volume += b
             sell_volume += s
 
-            # 2. Passively quote remaining capacity
             b, s = self.make_orders(
                 product, order_depth, fair_value, position,
                 buy_volume, sell_volume,
