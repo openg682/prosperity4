@@ -8,7 +8,6 @@ class Product:
     TOMATOES = "TOMATOES"
     EMERALDS = "EMERALDS"
 
-
 # ── Parameters ────────────────────────────────────────────────────────────────
 #
 # TOMATOES  volatile, drifting mid → use rolling EMA as fair value
