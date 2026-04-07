@@ -18,7 +18,7 @@ PARAMS = {
         "disregard_edge":  10,
         "join_edge":       4,
         "default_edge":    5,
-        "skew_factor":     3,
+        "skew_factor":     4,
     },
 }
 

@@ -1,7 +1,7 @@
 from datamodel import OrderDepth, TradingState, Order
 from typing import List, Dict, Tuple
 import jsonpickle
-
+#to run this file, use `python3 backtester.py wrapper.py:totest.py` from the root directory of the repo
 
 PARAMS = {
     "fair_value": 10000,

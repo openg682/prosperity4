@@ -15,6 +15,8 @@ Usage:
 
 To test your own algorithm, subclass TradingAlgorithm and implement get_orders().
 """
+#to run this file, use `python3 backtester.py wrapper.py:totest.py` from the root directory of the repo
+
 
 import sys
 import pandas as pd
