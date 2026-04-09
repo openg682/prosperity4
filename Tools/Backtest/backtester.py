@@ -19,6 +19,7 @@ To test your own algorithm, subclass TradingAlgorithm and implement get_orders()
 
 
 import sys
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -178,6 +179,15 @@ class Backtester:
                 total += pos * order_books[product].mid_price
         return total
 
+    def _pnl_per_product(self, order_books):
+        result = {}
+        for product, pos in self.positions.items():
+            mtm = self.cash[product]
+            if product in order_books:
+                mtm += pos * order_books[product].mid_price
+            result[product] = mtm
+        return result
+
     def run(self):
         all_products = self.prices['product'].unique().tolist()
         grouped = self.prices.groupby(['day', 'timestamp'], sort=True)
@@ -212,7 +222,20 @@ class Backtester:
                 'utilisation_pct': float(np.mean(np.abs(hist)) / lim * 100),
             }
         self._plot(products)
+        self._save_output(products)
         return report
+
+    def _save_output(self, products):
+        rows = []
+        for i in range(len(self.pnl_history)):
+            row = {'tick': i, 'pnl': self.pnl_history[i]}
+            for p in products:
+                row[f'position_{p}'] = self.position_history[p][i]
+            rows.append(row)
+        df = pd.DataFrame(rows)
+        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_output.csv')
+        df.to_csv(out, index=False)
+        print(f"[output → {out}]")
 
     def _plot(self, products):
         n = 1 + len(products)
@@ -245,7 +268,7 @@ class Backtester:
 
         axes[-1].set_xlabel('Tick')
         plt.tight_layout()
-        out = 'backtest_results.png'
+        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backtest_results.png')
         plt.savefig(out, dpi=150, bbox_inches='tight'); plt.close()
         print(f"[plot → {out}]")
 
@@ -320,7 +343,6 @@ def load_algorithm(name: str) -> TradingAlgorithm:
         return BUILTIN[name]()
 
     _install_jsonpickle_shim()
-    # Support "wrapper.py:strategy.py" syntax
     if ':' in name:
         wrapper_path, strategy_path = name.split(':', 1)
         wrapper_mod  = _load_module(wrapper_path, 'wrapper')
@@ -328,7 +350,6 @@ def load_algorithm(name: str) -> TradingAlgorithm:
         algo_class   = wrapper_mod.wrap(strategy_mod.Trader)
         return algo_class()
 
-    # Plain strategy file with ALGORITHM defined
     mod = _load_module(name, 'custom_strategy')
     return mod.ALGORITHM()
 
@@ -342,6 +363,7 @@ if __name__ == '__main__':
         '../../Files/Trades/trades_round_0_day_-2.csv',
         '../../Files/Trades/trades_round_0_day_-1.csv',
     ]
+
     strategy_arg = sys.argv[1] if len(sys.argv) > 1 else 'combined'
     print(f"Loading strategy: {strategy_arg}")
 

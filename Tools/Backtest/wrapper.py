@@ -20,8 +20,10 @@ if 'jsonpickle' not in sys.modules:
     shim.decode = json.loads
     sys.modules['jsonpickle'] = shim
 
-from Tools.Backtest.backtester import TradingAlgorithm, Order as BacktesterOrder
-from Tools.Backtest.datamodel import OrderDepth, TradingState
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from backtester import TradingAlgorithm, Order as BacktesterOrder
+from datamodel import OrderDepth, TradingState
 
 
 def wrap(trader_class) -> type:
