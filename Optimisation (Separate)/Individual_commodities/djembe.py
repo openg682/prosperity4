@@ -1,27 +1,27 @@
-from Backtest.datamodel import OrderDepth, TradingState, Order
+from Tools.Backtest.datamodel import OrderDepth, TradingState, Order
 from typing import List
 import jsonpickle
 import numpy as np
 
 class Product:
-    CROISSANTS = "CROISSANTS"
+    DJEMBE = "DJEMBE"
 
 PARAMS = {
-    Product.CROISSANTS: {
-        "fair_value": 4300.0,
-        "take_width": 15,
-        "clear_width": 10,
-        "disregard_edge": 30,
-        "join_edge": 5,
-        "default_edge": 10,
-        "soft_position_limit": 225,
+    Product.DJEMBE: {
+        "fair_value": 13380.0,
+        "take_width": 1,
+        "clear_width": 0.5,
+        "disregard_edge": 10,
+        "join_edge": 0.5,
+        "default_edge": 1,
+        "soft_position_limit": 54,
     },
 }
 
 class Trader:
     def __init__(self):
         self.params = PARAMS
-        self.LIMIT = {p: 250 for p in PARAMS}
+        self.LIMIT = {p: 60 for p in PARAMS}
         self.mid_price_history = {product: [] for product in PARAMS}
         self.window = 10
         self.default_min_spread = 1
@@ -87,7 +87,7 @@ class Trader:
         traderObject = jsonpickle.decode(state.traderData) if state.traderData else {}
         capital = traderObject.get("capital", 0)
         initial_capital = traderObject.get("initial_capital", capital)
-        product = Product.CROISSANTS
+        product = Product.DJEMBE
 
         if product not in state.order_depths:
             return {}, 0, state.traderData

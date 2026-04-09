@@ -1,30 +1,30 @@
-from Backtest.datamodel import OrderDepth, TradingState, Order
+from Tools.Backtest.datamodel import OrderDepth, TradingState, Order
 from typing import List
 import jsonpickle
 import numpy as np
 
 class Product:
-    SQUID_INK = "SQUID_INK"
+    CROISSANTS = "CROISSANTS"
 
 PARAMS = {
-    Product.SQUID_INK: {
-        "fair_value": 1968,
-        "take_width": 25,
+    Product.CROISSANTS: {
+        "fair_value": 4300.0,
+        "take_width": 15,
         "clear_width": 10,
-        "disregard_edge": 60,
-        "join_edge": 20,
-        "default_edge": 35,
-        "soft_position_limit": 45,
+        "disregard_edge": 30,
+        "join_edge": 5,
+        "default_edge": 10,
+        "soft_position_limit": 225,
     },
 }
 
 class Trader:
     def __init__(self):
         self.params = PARAMS
-        self.LIMIT = {p: 45 for p in PARAMS}
+        self.LIMIT = {p: 250 for p in PARAMS}
         self.mid_price_history = {product: [] for product in PARAMS}
-        self.window = 20
-        self.default_min_spread = 1.1
+        self.window = 10
+        self.default_min_spread = 1
 
     def take_best_orders(self, product, fair_value, take_width, orders, order_depth, position):
         position_limit = self.LIMIT[product]
@@ -54,14 +54,13 @@ class Trader:
         return buy_volume, sell_volume
 
     def market_make(self, product, orders, bid, ask, position, buy_volume, sell_volume, order_depth):
-        # Always market make for SQUID_INK
         buy_qty = self.LIMIT[product] - (position + buy_volume)
         if buy_qty > 0:
-            orders.append(Order(product, bid, buy_qty))
+            orders.append(Order(product, round(bid, 1), buy_qty))
 
         sell_qty = self.LIMIT[product] + (position - sell_volume)
         if sell_qty > 0:
-            orders.append(Order(product, ask, -sell_qty))
+            orders.append(Order(product, round(ask, 1), -sell_qty))
 
         return buy_volume, sell_volume
 
@@ -69,16 +68,17 @@ class Trader:
         orders = []
         asks = [p for p in order_depth.sell_orders if p > fair_value + disregard_edge]
         bids = [p for p in order_depth.buy_orders if p < fair_value - disregard_edge]
+        tick_size = 0.1
 
-        ask = round(fair_value + default_edge, 2)
+        ask = round(fair_value + default_edge, 1)
         if asks:
             best_ask = min(asks)
-            ask = best_ask if abs(best_ask - fair_value) <= join_edge else best_ask - 1
+            ask = min(ask, round(best_ask - tick_size, 1)) if abs(best_ask - fair_value) <= join_edge else min(ask, round(best_ask - tick_size, 1))
 
-        bid = round(fair_value - default_edge, 2)
+        bid = round(fair_value - default_edge, 1)
         if bids:
             best_bid = max(bids)
-            bid = best_bid if abs(fair_value - best_bid) <= join_edge else best_bid + 1
+            bid = max(bid, round(best_bid + tick_size, 1)) if abs(fair_value - best_bid) <= join_edge else max(bid, round(best_bid + tick_size, 1))
 
         return self.market_make(product, orders, bid, ask, position, buy_volume, sell_volume, order_depth)
 
@@ -87,7 +87,7 @@ class Trader:
         traderObject = jsonpickle.decode(state.traderData) if state.traderData else {}
         capital = traderObject.get("capital", 0)
         initial_capital = traderObject.get("initial_capital", capital)
-        product = Product.SQUID_INK
+        product = Product.CROISSANTS
 
         if product not in state.order_depths:
             return {}, 0, state.traderData
@@ -119,7 +119,7 @@ class Trader:
         sell_volume += s
 
         result[product] = orders
-        capital += 1
+        capital += 1  # Simulating capital change
         traderObject["capital"] = capital
         traderData = jsonpickle.encode(traderObject)
 

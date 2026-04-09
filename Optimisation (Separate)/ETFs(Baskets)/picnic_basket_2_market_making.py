@@ -1,36 +1,42 @@
-from Backtest.datamodel import OrderDepth, TradingState, Order
+from Tools.Backtest.datamodel import OrderDepth, TradingState, Order
 from typing import List
 import jsonpickle
 import numpy as np
 
 class Product:
+    PICNIC_BASKET2 = "PICNIC_BASKET2"
+    CROISSANTS = "CROISSANTS"
     JAMS = "JAMS"
+    BASKET2_COMPONENTS = {CROISSANTS: 4, JAMS: 2}
 
 PARAMS = {
-    Product.JAMS: {
-        "fair_value": 6550.0,
-        "take_width": 1,
-        "clear_width": 0.5,
-        "disregard_edge": 6,
-        "join_edge": 0.5,
-        "default_edge": 1.5,
-        "soft_position_limit": 315,
+    Product.PICNIC_BASKET2: {
+        "fair_value": 30100.0,
+        "take_width": 3,
+        "clear_width": 2,
+        "disregard_edge": 15,
+        "join_edge": 1.5,
+        "default_edge": 4,
+        "soft_position_limit": 90,
     },
 }
 
 class Trader:
     def __init__(self):
         self.params = PARAMS
-        self.LIMIT = {p: 350 for p in PARAMS}  # Maximum position limit for JAMS
+        self.LIMIT = {p: 100 for p in PARAMS}
         self.mid_price_history = {product: [] for product in PARAMS}
         self.window = 10
         self.default_min_spread = 1
+        self.component_fair_values = {
+            Product.CROISSANTS: 4300,  # Example fair values
+            Product.JAMS: 6550,
+        }
 
     def take_best_orders(self, product, fair_value, take_width, orders, order_depth, position):
-        position_limit = self.LIMIT[product]  # Maximum position limit for JAMS
+        position_limit = self.LIMIT[product]
         buy_volume = sell_volume = 0
 
-        # Check if position exceeds the limit
         if abs(position) >= position_limit:
             return 0, 0
 
@@ -55,14 +61,13 @@ class Trader:
         return buy_volume, sell_volume
 
     def market_make(self, product, orders, bid, ask, position, buy_volume, sell_volume, order_depth):
-        # Ensure that the position does not exceed the hard limit (350)
         buy_qty = self.LIMIT[product] - (position + buy_volume)
         if buy_qty > 0:
-            orders.append(Order(product, round(bid, 1), buy_qty))
+            orders.append(Order(product, int(round(bid)), buy_qty))
 
         sell_qty = self.LIMIT[product] + (position - sell_volume)
         if sell_qty > 0:
-            orders.append(Order(product, round(ask, 1), -sell_qty))
+            orders.append(Order(product, int(round(ask)), -sell_qty))
 
         return buy_volume, sell_volume
 
@@ -70,17 +75,16 @@ class Trader:
         orders = []
         asks = [p for p in order_depth.sell_orders if p > fair_value + disregard_edge]
         bids = [p for p in order_depth.buy_orders if p < fair_value - disregard_edge]
-        tick_size = 0.1
 
-        ask = round(fair_value + default_edge, 1)
+        ask = round(fair_value + default_edge, 2)
         if asks:
             best_ask = min(asks)
-            ask = min(ask, round(best_ask - tick_size, 1)) if abs(best_ask - fair_value) <= join_edge else min(ask, round(best_ask - tick_size, 1))
+            ask = best_ask if abs(best_ask - fair_value) <= join_edge else best_ask - 1
 
-        bid = round(fair_value - default_edge, 1)
+        bid = round(fair_value - default_edge, 2)
         if bids:
             best_bid = max(bids)
-            bid = max(bid, round(best_bid + tick_size, 1)) if abs(fair_value - best_bid) <= join_edge else max(bid, round(best_bid + tick_size, 1))
+            bid = best_bid if abs(fair_value - best_bid) <= join_edge else best_bid + 1
 
         return self.market_make(product, orders, bid, ask, position, buy_volume, sell_volume, order_depth)
 
@@ -89,7 +93,7 @@ class Trader:
         traderObject = jsonpickle.decode(state.traderData) if state.traderData else {}
         capital = traderObject.get("capital", 0)
         initial_capital = traderObject.get("initial_capital", capital)
-        product = Product.JAMS
+        product = Product.PICNIC_BASKET2
 
         if product not in state.order_depths:
             return {}, 0, state.traderData
@@ -108,10 +112,9 @@ class Trader:
                 self.mid_price_history[product].pop(0)
 
         fair_value = p["fair_value"]
-
-        # Ensure position does not exceed the limit of 350
-        if abs(position) >= self.LIMIT[product]:
-            return {}, 0, state.traderData
+        # Update fair value based on components (example - you might need a more dynamic approach)
+        fv_basket = sum(self.component_fair_values[comp] * qty for comp, qty in Product.BASKET2_COMPONENTS.items())
+        fair_value = fv_basket
 
         b, s = self.take_best_orders(product, fair_value, p["take_width"], orders, order_depth, position)
         buy_volume += b
