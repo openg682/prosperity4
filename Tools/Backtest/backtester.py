@@ -181,7 +181,9 @@ class Backtester:
         total = sum(self.cash.values())
         for product, pos in self.positions.items():
             if product in order_books:
-                total += pos * order_books[product].mid_price
+                mid = order_books[product].mid_price
+                if mid > 0:   # skip corrupt zero-mid ticks (raw CSV artifact)
+                    total += pos * mid
         return total
 
     def _pnl_per_product(self, order_books):
@@ -189,7 +191,9 @@ class Backtester:
         for product, pos in self.positions.items():
             mtm = self.cash[product]
             if product in order_books:
-                mtm += pos * order_books[product].mid_price
+                mid = order_books[product].mid_price
+                if mid > 0:   # skip corrupt zero-mid ticks
+                    mtm += pos * mid
             result[product] = mtm
         return result
 

@@ -39,7 +39,7 @@ TRADE_FILES = sorted(glob.glob(os.path.join(_FILES, 'Trades', '*.csv')))
 
 # Stable products use fixed fair-value strategy (default_edge × take_width sweep)
 # All others use EMA-based strategy (alpha × default_edge sweep)
-STABLE_PRODUCTS = {'EMERALDS', 'ASH_COATED_OSMIUM'}
+STABLE_PRODUCTS = {'ASH_COATED_OSMIUM'}
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -374,8 +374,6 @@ app.layout = html.Div(style={
                 options=[
                     {'label': '  ASH_COATED_OSMIUM      (default_edge × take_width)', 'value': 'ASH_COATED_OSMIUM'},
                     {'label': '  INTARIAN_PEPPER_ROOT   (alpha × default_edge)',       'value': 'INTARIAN_PEPPER_ROOT'},
-                    {'label': '  EMERALDS               (default_edge × take_width)', 'value': 'EMERALDS'},
-                    {'label': '  TOMATOES               (alpha × default_edge)',       'value': 'TOMATOES'},
                 ],
                 value='ASH_COATED_OSMIUM',
                 inline=True,
@@ -499,56 +497,63 @@ def update_controls(product, mode):
             ]),
         ])
 
+    # EMA-only controls are always rendered so their IDs always exist in the DOM.
+    # When a stable product is selected they are hidden via display:none — Dash
+    # requires every State/Input ID to be present in the layout at callback time.
+    ema_hidden = product in STABLE_PRODUCTS
+    ema_style  = {**panel_style, 'display': 'none'} if ema_hidden else panel_style
+
+    ema_controls = html.Div(style=ema_style, children=[
+        html.Label("SWEEP AXES", style=label_style),
+        dcc.RadioItems(
+            id='tomatoes-axes',
+            options=[
+                {'label': '  default_edge × alpha',            'value': 'edge_alpha'},
+                {'label': '  default_edge × take_width',       'value': 'edge_tw'},
+                {'label': '  alpha × take_width',              'value': 'alpha_tw'},
+                {'label': '  default_edge × vol_scale_factor', 'value': 'edge_vol'},
+                {'label': '  alpha × vol_scale_factor',        'value': 'alpha_vol'},
+                {'label': '  take_width × vol_scale_factor',   'value': 'tw_vol'},
+            ],
+            value='edge_alpha',
+            style={'color': COLORS['text'], 'fontSize': '12px'},
+            inputStyle={'marginRight': '6px'},
+            labelStyle={'display': 'block', 'marginBottom': '6px'},
+        ),
+        html.Div(style={'marginTop': '12px', 'display': 'flex', 'gap': '16px', 'flexWrap': 'wrap'},
+        children=[
+            html.Div(children=[
+                html.Label("FIXED ALPHA (×0.01)", style={**label_style, 'fontSize': '10px'}),
+                dcc.Input(id='fixed-alpha', type='number', value=25, step=1,
+                          style={**input_style, 'width': '80px'}),
+            ]),
+            html.Div(children=[
+                html.Label("FIXED DEFAULT EDGE", style={**label_style, 'fontSize': '10px'}),
+                dcc.Input(id='fixed-edge', type='number', value=5, step=1,
+                          style={**input_style, 'width': '80px'}),
+            ]),
+            html.Div(children=[
+                html.Label("FIXED TAKE WIDTH", style={**label_style, 'fontSize': '10px'}),
+                dcc.Input(id='fixed-tw', type='number', value=5, step=1,
+                          style={**input_style, 'width': '80px'}),
+            ]),
+            html.Div(children=[
+                html.Label("FIXED VOL SCALE (×0.01)", style={**label_style, 'fontSize': '10px'}),
+                dcc.Input(id='fixed-vol', type='number', value=50, step=1,
+                          style={**input_style, 'width': '80px'}),
+            ]),
+        ]),
+    ])
+
     if product in STABLE_PRODUCTS:
         controls = [
             slider_block('X AXIS — DEFAULT EDGE', 'x', 1, 2, 12),
             slider_block('Y AXIS — TAKE WIDTH',   'y', 1, 1, 6),
+            ema_controls,   # hidden, but present so IDs exist in the DOM
         ]
     else:
-        # EMA products: axis selector + fixed param inputs
-        axis_selector = html.Div(style=panel_style, children=[
-            html.Label("SWEEP AXES", style=label_style),
-            dcc.RadioItems(
-                id='tomatoes-axes',
-                options=[
-                    {'label': '  default_edge × alpha',            'value': 'edge_alpha'},
-                    {'label': '  default_edge × take_width',       'value': 'edge_tw'},
-                    {'label': '  alpha × take_width',              'value': 'alpha_tw'},
-                    {'label': '  default_edge × vol_scale_factor', 'value': 'edge_vol'},
-                    {'label': '  alpha × vol_scale_factor',        'value': 'alpha_vol'},
-                    {'label': '  take_width × vol_scale_factor',   'value': 'tw_vol'},
-                ],
-                value='edge_alpha',
-                style={'color': COLORS['text'], 'fontSize': '12px'},
-                inputStyle={'marginRight': '6px'},
-                labelStyle={'display': 'block', 'marginBottom': '6px'},
-            ),
-            html.Div(style={'marginTop': '12px', 'display': 'flex', 'gap': '16px', 'flexWrap': 'wrap'},
-            children=[
-                html.Div(children=[
-                    html.Label("FIXED ALPHA (×0.01)", style={**label_style, 'fontSize': '10px'}),
-                    dcc.Input(id='fixed-alpha', type='number', value=25, step=1,
-                              style={**input_style, 'width': '80px'}),
-                ]),
-                html.Div(children=[
-                    html.Label("FIXED DEFAULT EDGE", style={**label_style, 'fontSize': '10px'}),
-                    dcc.Input(id='fixed-edge', type='number', value=5, step=1,
-                              style={**input_style, 'width': '80px'}),
-                ]),
-                html.Div(children=[
-                    html.Label("FIXED TAKE WIDTH", style={**label_style, 'fontSize': '10px'}),
-                    dcc.Input(id='fixed-tw', type='number', value=5, step=1,
-                              style={**input_style, 'width': '80px'}),
-                ]),
-                html.Div(children=[
-                    html.Label("FIXED VOL SCALE (×0.01)", style={**label_style, 'fontSize': '10px'}),
-                    dcc.Input(id='fixed-vol', type='number', value=50, step=1,
-                              style={**input_style, 'width': '80px'}),
-                ]),
-            ]),
-        ])
         controls = [
-            axis_selector,
+            ema_controls,
             html.Div(style={'display': 'flex', 'flexDirection': 'column', 'gap': '12px'}, children=[
                 slider_block('X AXIS RANGE', 'x', 1, 4, 16),
                 slider_block('Y AXIS RANGE', 'y', 1, 4, 30),
