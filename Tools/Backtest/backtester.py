@@ -15,7 +15,7 @@ Usage:
 
 To test your own algorithm, subclass TradingAlgorithm and implement get_orders().
 """
-#to run this file, use `python3 backtester.py wrapper.py:totest.py` from the root directory of the repo
+# to run this file, use `python3 backtester.py wrapper.py:totest.py` from the root directory of the repo
 
 
 import sys
@@ -75,8 +75,13 @@ class TradingAlgorithm:
 # ── Backtester ────────────────────────────────────────────────────────────────
 
 class Backtester:
-    POSITION_LIMITS = {'EMERALDS': 80, 'TOMATOES': 80}
-    DEFAULT_LIMIT   = 80
+    POSITION_LIMITS = {
+        'EMERALDS':             80,
+        'TOMATOES':             80,
+        'ASH_COATED_OSMIUM':    80,
+        'INTARIAN_PEPPER_ROOT': 80,
+    }
+    DEFAULT_LIMIT = 80
 
     def __init__(self, price_files, trade_files, algorithm):
         self.algorithm = algorithm
@@ -93,11 +98,11 @@ class Backtester:
         self.trades = pd.concat(trade_frames, ignore_index=True)
 
         self._trade_idx = {}
-        for (day, ts, sym), grp in self.trades.groupby(['day','timestamp','symbol']):
+        for (day, ts, sym), grp in self.trades.groupby(['day', 'timestamp', 'symbol']):
             self._trade_idx[(day, ts, sym)] = grp
 
-        self.positions = defaultdict(int)
-        self.cash      = defaultdict(float)
+        self.positions        = defaultdict(int)
+        self.cash             = defaultdict(float)
         self.pnl_history      = []
         self.position_history = defaultdict(list)
 
@@ -239,7 +244,7 @@ class Backtester:
 
     def _plot(self, products):
         n = 1 + len(products)
-        fig, axes = plt.subplots(n, 1, figsize=(16, 4*n), sharex=True)
+        fig, axes = plt.subplots(n, 1, figsize=(16, 4 * n), sharex=True)
         if n == 1: axes = [axes]
         ticks = np.arange(len(self.pnl_history))
 
@@ -247,23 +252,25 @@ class Backtester:
         ax.plot(ticks, self.pnl_history, color='#2ecc71', linewidth=1.0)
         ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
         ax.fill_between(ticks, self.pnl_history, 0,
-                         where=[p >= 0 for p in self.pnl_history], alpha=0.15, color='#2ecc71')
+                        where=[p >= 0 for p in self.pnl_history], alpha=0.15, color='#2ecc71')
         ax.fill_between(ticks, self.pnl_history, 0,
-                         where=[p < 0 for p in self.pnl_history], alpha=0.15, color='#e74c3c')
+                        where=[p < 0 for p in self.pnl_history], alpha=0.15, color='#e74c3c')
         ax.set_title('PnL Over Time (mark-to-mid)', fontsize=13, fontweight='bold')
         ax.set_ylabel('PnL'); ax.grid(True, alpha=0.3)
 
-        colors = ['#3498db', '#e67e22']
+        colors = ['#3498db', '#e67e22', '#9b59b6', '#1abc9c']
         for i, p in enumerate(products):
-            ax  = axes[i+1]; lim = self._limit(p)
-            color = colors[i % len(colors)]; hist = self.position_history[p]
+            ax    = axes[i + 1]
+            lim   = self._limit(p)
+            color = colors[i % len(colors)]
+            hist  = self.position_history[p]
             ax.plot(ticks, hist, color=color, linewidth=0.9)
             ax.axhline( lim, color='#e74c3c', linestyle='--', linewidth=1, label=f'+{lim} limit')
             ax.axhline(-lim, color='#e74c3c', linestyle='--', linewidth=1, label=f'-{lim} limit')
             ax.axhline(0, color='black', linewidth=0.5)
             ax.fill_between(ticks, hist, 0, alpha=0.12, color=color)
             ax.set_title(f'{p} Position', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Units'); ax.set_ylim(-lim*1.15, lim*1.15)
+            ax.set_ylabel('Units'); ax.set_ylim(-lim * 1.15, lim * 1.15)
             ax.legend(loc='upper right', fontsize=8); ax.grid(True, alpha=0.3)
 
         axes[-1].set_xlabel('Tick')
@@ -273,44 +280,60 @@ class Backtester:
         print(f"[plot → {out}]")
 
 
-# ── Algorithms ────────────────────────────────────────────────────────────────
+# ── Built-in algorithms ───────────────────────────────────────────────────────
 
-class EmeraldsMarketMaker(TradingAlgorithm):
+class OsmiumMarketMaker(TradingAlgorithm):
+    """Fixed fair-value market maker for ASH_COATED_OSMIUM (~10,000, std ~5)."""
     FAIR_VALUE = 10_000
-    EDGE = 6
+    EDGE       = 6
+
     def get_orders(self, order_books, positions):
-        book = order_books.get('EMERALDS')
+        book = order_books.get('ASH_COATED_OSMIUM')
         if not book: return []
-        pos = positions.get('EMERALDS', 0); lim = 80
+        pos = positions.get('ASH_COATED_OSMIUM', 0)
+        lim = 80
         orders = []
-        if lim - pos > 0: orders.append(Order('EMERALDS','BUY', self.FAIR_VALUE-self.EDGE, lim-pos))
-        if lim + pos > 0: orders.append(Order('EMERALDS','SELL',self.FAIR_VALUE+self.EDGE, lim+pos))
+        if lim - pos > 0:
+            orders.append(Order('ASH_COATED_OSMIUM', 'BUY',  self.FAIR_VALUE - self.EDGE, lim - pos))
+        if lim + pos > 0:
+            orders.append(Order('ASH_COATED_OSMIUM', 'SELL', self.FAIR_VALUE + self.EDGE, lim + pos))
         return orders
 
 
-class TomatoesEMAMarketMaker(TradingAlgorithm):
-    ALPHA = 0.15; EDGE = 8
+class PepperRootEMAMarketMaker(TradingAlgorithm):
+    """EMA-based market maker for INTARIAN_PEPPER_ROOT (drifts ~1,000/day)."""
+    ALPHA = 0.25
+    EDGE  = 5
+
     def __init__(self):
-        super().__init__(); self.ema = None
+        super().__init__()
+        self.ema = None
+
     def get_orders(self, order_books, positions):
-        book = order_books.get('TOMATOES')
+        book = order_books.get('INTARIAN_PEPPER_ROOT')
         if not book: return []
-        mid = book.mid_price
-        self.ema = mid if self.ema is None else self.ALPHA*mid + (1-self.ALPHA)*self.ema
-        fv = round(self.ema); pos = positions.get('TOMATOES',0); lim = 80
-        orders = []
-        if lim - pos > 0: orders.append(Order('TOMATOES','BUY', fv-self.EDGE, lim-pos))
-        if lim + pos > 0: orders.append(Order('TOMATOES','SELL',fv+self.EDGE, lim+pos))
+        mid      = book.mid_price
+        self.ema = mid if self.ema is None else self.ALPHA * mid + (1 - self.ALPHA) * self.ema
+        fv       = round(self.ema)
+        pos      = positions.get('INTARIAN_PEPPER_ROOT', 0)
+        lim      = 80
+        orders   = []
+        if lim - pos > 0:
+            orders.append(Order('INTARIAN_PEPPER_ROOT', 'BUY',  fv - self.EDGE, lim - pos))
+        if lim + pos > 0:
+            orders.append(Order('INTARIAN_PEPPER_ROOT', 'SELL', fv + self.EDGE, lim + pos))
         return orders
 
 
 class CombinedAlgorithm(TradingAlgorithm):
     def __init__(self):
         super().__init__()
-        self._em = EmeraldsMarketMaker()
-        self._tm = TomatoesEMAMarketMaker()
+        self._osmium = OsmiumMarketMaker()
+        self._pepper = PepperRootEMAMarketMaker()
+
     def get_orders(self, order_books, positions):
-        return self._em.get_orders(order_books, positions) + self._tm.get_orders(order_books, positions)
+        return (self._osmium.get_orders(order_books, positions) +
+                self._pepper.get_orders(order_books, positions))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -336,8 +359,8 @@ def _load_module(path: str, name: str):
 def load_algorithm(name: str) -> TradingAlgorithm:
     BUILTIN = {
         'combined': CombinedAlgorithm,
-        'emeralds': EmeraldsMarketMaker,
-        'tomatoes': TomatoesEMAMarketMaker,
+        'osmium':   OsmiumMarketMaker,
+        'pepper':   PepperRootEMAMarketMaker,
     }
     if name in BUILTIN:
         return BUILTIN[name]()
@@ -356,12 +379,14 @@ def load_algorithm(name: str) -> TradingAlgorithm:
 
 if __name__ == '__main__':
     PRICE_FILES = [
-        '../../Files/Prices/prices_round_0_day_-2.csv',
-        '../../Files/Prices/prices_round_0_day_-1.csv',
+        '../../Files/Prices/prices_round_1_day_-2.csv',
+        '../../Files/Prices/prices_round_1_day_-1.csv',
+        '../../Files/Prices/prices_round_1_day_0.csv',
     ]
     TRADE_FILES = [
-        '../../Files/Trades/trades_round_0_day_-2.csv',
-        '../../Files/Trades/trades_round_0_day_-1.csv',
+        '../../Files/Trades/trades_round_1_day_-2.csv',
+        '../../Files/Trades/trades_round_1_day_-1.csv',
+        '../../Files/Trades/trades_round_1_day_0.csv',
     ]
 
     strategy_arg = sys.argv[1] if len(sys.argv) > 1 else 'combined'

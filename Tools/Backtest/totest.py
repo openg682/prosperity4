@@ -1,29 +1,44 @@
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from datamodel import OrderDepth, TradingState, Order
-from typing import List, Dict, Tuple
+from typing import Dict
 import jsonpickle
-#to run this file, use `python3 backtester.py wrapper.py:totest.py` from the root directory of the repo
-
 PARAMS = {
-    "fair_value_seed": 5000,
-    "ema_alpha":       0.25,   # faster than original 0.15 — tracks drift better
-    "take_width":      4,      # tighter aggression window
-    "default_edge":    4,      # tighter passive quotes than original 7
-    "disregard_edge":  10,
-    "join_edge":       4,
-    "skew_factor":     3,      # shift quotes by up to 3 ticks at position limit
+    "ASH_COATED_OSMIUM": {
+        "fair_value":      10000,
+        "take_width":      2,
+        "disregard_edge":  6,
+        "join_edge":       2,
+        "default_edge":    6,
+    },
+    "INTARIAN_PEPPER_ROOT": {
+        "ema_alpha":       0.5,    # increased from 0.25 — tracks the ~1/tick drift much faster
+        "take_width":      4,
+        "disregard_edge":  10,
+        "join_edge":       4,
+        "default_edge":    5,
+        "skew_factor":     3,
+    },
 }
 
-POSITION_LIMIT = 80
+POSITION_LIMITS: Dict[str, int] = {
+    "ASH_COATED_OSMIUM":    80,
+    "INTARIAN_PEPPER_ROOT": 80,
+}
 
 
 class Trader:
     def __init__(self):
-        self.LIMIT = POSITION_LIMIT
+        self.LIMIT = POSITION_LIMITS
 
-    def get_fair_value(self, order_depth, trader_state):
-        alpha = PARAMS["ema_alpha"]
+    def get_fair_value(self, product, order_depth, trader_state):
+        if product == "ASH_COATED_OSMIUM":
+            return PARAMS["ASH_COATED_OSMIUM"]["fair_value"]
+
+        # INTARIAN_PEPPER_ROOT: EMA of mid price to track the daily drift
+        p     = PARAMS["INTARIAN_PEPPER_ROOT"]
+        alpha = p["ema_alpha"]
+
         if order_depth.buy_orders and order_depth.sell_orders:
             mid = (max(order_depth.buy_orders) + min(order_depth.sell_orders)) / 2.0
         elif order_depth.buy_orders:
@@ -31,44 +46,66 @@ class Trader:
         elif order_depth.sell_orders:
             mid = float(min(order_depth.sell_orders))
         else:
-            mid = PARAMS["fair_value_seed"]
-        prev = trader_state.get("ema", PARAMS["fair_value_seed"])
+            # No market data at all — use last known EMA if available
+            return trader_state.get("INTARIAN_PEPPER_ROOT_ema", 10000)
+
+        # KEY FIX: on the very first tick, seed the EMA from the observed mid
+        # price rather than the hardcoded constant.  Previously the seed was
+        # 10000 while the market was at ~12000 on day 0, causing our ask to be
+        # ~1500 below market for the first 20 ticks and pinning us at -80 short.
+        if "INTARIAN_PEPPER_ROOT_ema" not in trader_state:
+            trader_state["INTARIAN_PEPPER_ROOT_ema"] = mid
+            return mid
+
+        prev = trader_state["INTARIAN_PEPPER_ROOT_ema"]
         ema  = alpha * mid + (1 - alpha) * prev
-        trader_state["ema"] = ema
+        trader_state["INTARIAN_PEPPER_ROOT_ema"] = ema
         return ema
 
-    def take_best_orders(self, fair_value, orders, order_depth, position):
-        tw = PARAMS["take_width"]; lim = self.LIMIT
+    def take_best_orders(self, product, fair_value, take_width,
+                         orders, order_depth, position):
+        lim = self.LIMIT[product]
         bv = sv = 0
+
+        if abs(position) >= lim:
+            return 0, 0
+
         if order_depth.sell_orders:
             ba = min(order_depth.sell_orders)
-            if ba <= fair_value - tw:
+            if ba <= fair_value - take_width:
                 qty = min(-order_depth.sell_orders[ba], lim - position)
                 if qty > 0:
-                    orders.append(Order("TOMATOES", ba, qty))
+                    orders.append(Order(product, ba, qty))
                     bv += qty
+
         if order_depth.buy_orders:
             bb = max(order_depth.buy_orders)
-            if bb >= fair_value + tw:
+            if bb >= fair_value + take_width:
                 qty = min(order_depth.buy_orders[bb], lim + position)
                 if qty > 0:
-                    orders.append(Order("TOMATOES", bb, -qty))
+                    orders.append(Order(product, bb, -qty))
                     sv += qty
+
         return bv, sv
 
-    def market_make(self, orders, bid, ask, position, buy_volume, sell_volume):
-        lim = self.LIMIT
+    def market_make(self, product, orders, bid, ask,
+                    position, buy_volume, sell_volume):
+        lim = self.LIMIT[product]
         bq  = lim - (position + buy_volume)
         sq  = lim + (position - sell_volume)
-        if bq > 0: orders.append(Order("TOMATOES", round(bid),  bq))
-        if sq > 0: orders.append(Order("TOMATOES", round(ask), -sq))
+        if bq > 0: orders.append(Order(product, round(bid),  bq))
+        if sq > 0: orders.append(Order(product, round(ask), -sq))
         return buy_volume, sell_volume
 
-    def make_orders(self, order_depth, fair_value, position,
+    def make_orders(self, product, order_depth, fair_value, position,
                     orders, buy_volume, sell_volume):
-        p = PARAMS
-        asks_out = [pr for pr in order_depth.sell_orders if pr > fair_value + p["disregard_edge"]]
-        bids_out = [pr for pr in order_depth.buy_orders  if pr < fair_value - p["disregard_edge"]]
+        p   = PARAMS[product]
+        lim = self.LIMIT[product]
+
+        asks_out = [pr for pr in order_depth.sell_orders
+                    if pr > fair_value + p["disregard_edge"]]
+        bids_out = [pr for pr in order_depth.buy_orders
+                    if pr < fair_value - p["disregard_edge"]]
 
         ask = fair_value + p["default_edge"]
         if asks_out:
@@ -80,37 +117,44 @@ class Trader:
             bb  = max(bids_out)
             bid = bb if abs(fair_value - bb) <= p["join_edge"] else bb + 1
 
-        # Inventory skewing — shift quotes toward fair value as position builds
-        # Long (+pos) → skew down to sell more, short (-pos) → skew up to buy more
-        skew = (position / self.LIMIT) * p["skew_factor"]
-        bid  = round(bid - skew)
-        ask  = round(ask - skew)
+        # Inventory skewing for INTARIAN_PEPPER_ROOT to prevent drift-induced imbalance
+        if product == "INTARIAN_PEPPER_ROOT":
+            skew = (position / lim) * p["skew_factor"]
+            bid  = round(bid - skew)
+            ask  = round(ask - skew)
 
-        return self.market_make(orders, bid, ask, position, buy_volume, sell_volume)
+        return self.market_make(product, orders, bid, ask,
+                                position, buy_volume, sell_volume)
 
     def run(self, state: TradingState):
         result       = {}
         trader_state = jsonpickle.decode(state.traderData) if state.traderData else {}
 
-        if "TOMATOES" in state.order_depths:
+        for product in ["ASH_COATED_OSMIUM", "INTARIAN_PEPPER_ROOT"]:
+            if product not in state.order_depths:
+                continue
+
             orders      = []
-            order_depth = state.order_depths["TOMATOES"]
+            order_depth = state.order_depths[product]
+            lim         = self.LIMIT[product]
 
-            # Hard clamp to enforce position limit regardless of exchange behaviour
-            position = state.position.get("TOMATOES", 0)
-            position = max(-self.LIMIT, min(self.LIMIT, position))
+            # Hard clamp to enforce position limit
+            position = state.position.get(product, 0)
+            position = max(-lim, min(lim, position))
 
-            fair_value = self.get_fair_value(order_depth, trader_state)
+            p          = PARAMS[product]
+            fair_value = self.get_fair_value(product, order_depth, trader_state)
             bv = sv = 0
 
-            b, s = self.take_best_orders(fair_value, orders, order_depth, position)
+            b, s = self.take_best_orders(product, fair_value, p["take_width"],
+                                         orders, order_depth, position)
             bv += b; sv += s
 
-            b, s = self.make_orders(order_depth, fair_value, position,
+            b, s = self.make_orders(product, order_depth, fair_value, position,
                                     orders, bv, sv)
             bv += b; sv += s
 
-            result["TOMATOES"] = orders
+            result[product] = orders
 
         traderData = jsonpickle.encode(trader_state)
         return result, 0, traderData

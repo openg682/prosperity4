@@ -20,7 +20,7 @@ if 'jsonpickle' not in sys.modules:
     shim.decode = json.loads
     sys.modules['jsonpickle'] = shim
 
-import os, sys
+import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from backtester import TradingAlgorithm, Order as BacktesterOrder
 from datamodel import OrderDepth, TradingState
@@ -30,27 +30,29 @@ def wrap(trader_class) -> type:
     """
     Returns a TradingAlgorithm subclass that wraps the given Trader class.
 
-    Includes a fix for the make_orders passive-quote bug:
-      - Intercepts market_make() calls to capture passive orders that would
-        otherwise be created in a local list and thrown away.
-      - Injects those orders back into the result transparently.
-      - The strategy file itself is completely unchanged.
+    If the strategy has a market_make() method, intercepts it to capture
+    passive orders that would otherwise be silently dropped.
+    If the strategy does not have market_make(), runs as-is with no patching.
     """
+
+    has_market_make = callable(getattr(trader_class, 'market_make', None))
 
     # ── Bug fix: subclass Trader to capture passive orders ────────────────────
     class FixedTrader(trader_class):
         def run(self, state):
+            if not has_market_make:
+                # No market_make method — run directly, no patching needed
+                return super().run(state)
+
             passive_orders = {}
-            original_mm   = trader_class.market_make
+            original_mm    = trader_class.market_make
 
             # Intercept market_make to capture what it appends to its orders list
             def capturing_mm(self_ref, *args, **kwargs):
-                # Find the orders list argument (always a list)
                 orders = next(a for a in args if isinstance(a, list))
                 before = len(orders)
                 result = original_mm(self_ref, *args, **kwargs)
                 new_passive = orders[before:]
-                # Infer product from the new orders if possible
                 if new_passive:
                     product = new_passive[0].symbol
                     passive_orders.setdefault(product, []).extend(new_passive)

@@ -1,19 +1,16 @@
 from datamodel import OrderDepth, TradingState, Order
-from typing import List, Dict
+from typing import Dict
 import jsonpickle
-
-
 PARAMS = {
-    "EMERALDS": {
+    "ASH_COATED_OSMIUM": {
         "fair_value":      10000,
         "take_width":      2,
         "disregard_edge":  6,
         "join_edge":       2,
         "default_edge":    6,
     },
-    "TOMATOES": {
-        "fair_value_seed": 5000,
-        "ema_alpha":       0.25,
+    "INTARIAN_PEPPER_ROOT": {
+        "ema_alpha":       0.5,    # increased from 0.25 — tracks the ~1/tick drift much faster
         "take_width":      4,
         "disregard_edge":  10,
         "join_edge":       4,
@@ -23,8 +20,8 @@ PARAMS = {
 }
 
 POSITION_LIMITS: Dict[str, int] = {
-    "EMERALDS": 80,
-    "TOMATOES": 80,
+    "ASH_COATED_OSMIUM":    80,
+    "INTARIAN_PEPPER_ROOT": 80,
 }
 
 
@@ -33,12 +30,13 @@ class Trader:
         self.LIMIT = POSITION_LIMITS
 
     def get_fair_value(self, product, order_depth, trader_state):
-        if product == "EMERALDS":
-            return PARAMS["EMERALDS"]["fair_value"]
+        if product == "ASH_COATED_OSMIUM":
+            return PARAMS["ASH_COATED_OSMIUM"]["fair_value"]
 
-        # TOMATOES: EMA of mid price
-        p     = PARAMS["TOMATOES"]
+        # INTARIAN_PEPPER_ROOT: EMA of mid price to track the daily drift
+        p     = PARAMS["INTARIAN_PEPPER_ROOT"]
         alpha = p["ema_alpha"]
+
         if order_depth.buy_orders and order_depth.sell_orders:
             mid = (max(order_depth.buy_orders) + min(order_depth.sell_orders)) / 2.0
         elif order_depth.buy_orders:
@@ -46,11 +44,20 @@ class Trader:
         elif order_depth.sell_orders:
             mid = float(min(order_depth.sell_orders))
         else:
-            mid = p["fair_value_seed"]
+            # No market data at all — use last known EMA if available
+            return trader_state.get("INTARIAN_PEPPER_ROOT_ema", 10000)
 
-        prev = trader_state.get("TOMATOES_ema", p["fair_value_seed"])
+        # KEY FIX: on the very first tick, seed the EMA from the observed mid
+        # price rather than the hardcoded constant.  Previously the seed was
+        # 10000 while the market was at ~12000 on day 0, causing our ask to be
+        # ~1500 below market for the first 20 ticks and pinning us at -80 short.
+        if "INTARIAN_PEPPER_ROOT_ema" not in trader_state:
+            trader_state["INTARIAN_PEPPER_ROOT_ema"] = mid
+            return mid
+
+        prev = trader_state["INTARIAN_PEPPER_ROOT_ema"]
         ema  = alpha * mid + (1 - alpha) * prev
-        trader_state["TOMATOES_ema"] = ema
+        trader_state["INTARIAN_PEPPER_ROOT_ema"] = ema
         return ema
 
     def take_best_orders(self, product, fair_value, take_width,
@@ -90,7 +97,7 @@ class Trader:
 
     def make_orders(self, product, order_depth, fair_value, position,
                     orders, buy_volume, sell_volume):
-        p = PARAMS[product]
+        p   = PARAMS[product]
         lim = self.LIMIT[product]
 
         asks_out = [pr for pr in order_depth.sell_orders
@@ -108,8 +115,8 @@ class Trader:
             bb  = max(bids_out)
             bid = bb if abs(fair_value - bb) <= p["join_edge"] else bb + 1
 
-        # Inventory skewing for TOMATOES only
-        if product == "TOMATOES":
+        # Inventory skewing for INTARIAN_PEPPER_ROOT to prevent drift-induced imbalance
+        if product == "INTARIAN_PEPPER_ROOT":
             skew = (position / lim) * p["skew_factor"]
             bid  = round(bid - skew)
             ask  = round(ask - skew)
@@ -121,7 +128,7 @@ class Trader:
         result       = {}
         trader_state = jsonpickle.decode(state.traderData) if state.traderData else {}
 
-        for product in ["EMERALDS", "TOMATOES"]:
+        for product in ["ASH_COATED_OSMIUM", "INTARIAN_PEPPER_ROOT"]:
             if product not in state.order_depths:
                 continue
 
