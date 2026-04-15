@@ -3,18 +3,22 @@ from typing import List, Dict
 import jsonpickle
 
 
-PARAMS = {
-    "ema_alpha":       0.020,
-    "take_width":      3,
-    "disregard_edge":  6,
+# ── ASH_COATED_OSMIUM params ──────────────────────────────────────────────────
+
+OSM_PARAMS = {
+    "ema_alpha":       0.05,
+    "take_width":      1,
+    "disregard_edge":  5,
     "join_edge":       2,
-    "default_edge":    3,
-    # Premium sweep layer: posted every tick at fv ± offset.
-    # Fills only when an aggressive sweeper clears the book past this price.
-    # qty is reserved from the normal MM allocation to stay within position limits.
-    "premium_offset":  20,
-    "premium_qty":     5,
+    "default_edge":    4,
+    "premium_offset":  15,
+    "premium_qty":     1,
 }
+
+# ── INTARIAN_PEPPER_ROOT params ───────────────────────────────────────────────
+
+IPR_EXIT_TIMESTAMP = 999200   # last ~7 ticks reserved for aggressive unwind
+IPR_STOP_LOSS      = -3000    # exit immediately if MTM drops below this
 
 POSITION_LIMIT = 80
 
@@ -23,7 +27,9 @@ class Trader:
     def __init__(self):
         self.LIMIT = POSITION_LIMIT
 
-    def get_fair_value(self, order_depth: OrderDepth, trader_state: Dict) -> int:
+    # ── ASH_COATED_OSMIUM ─────────────────────────────────────────────────────
+
+    def osm_fair_value(self, order_depth: OrderDepth, trader_state: Dict) -> int:
         if order_depth.buy_orders and order_depth.sell_orders:
             mid = (max(order_depth.buy_orders) + min(order_depth.sell_orders)) / 2.0
         elif order_depth.buy_orders:
@@ -31,55 +37,48 @@ class Trader:
         elif order_depth.sell_orders:
             mid = float(min(order_depth.sell_orders))
         else:
-            return round(trader_state.get("ema_fv", 10000))
+            return round(trader_state.get("osm_ema_fv", 10000))
 
-        if "ema_fv" not in trader_state:
-            trader_state["ema_fv"] = mid
+        if "osm_ema_fv" not in trader_state:
+            trader_state["osm_ema_fv"] = mid
             return round(mid)
 
-        alpha = PARAMS["ema_alpha"]
-        ema   = alpha * mid + (1 - alpha) * trader_state["ema_fv"]
-        trader_state["ema_fv"] = ema
+        alpha = OSM_PARAMS["ema_alpha"]
+        ema   = alpha * mid + (1 - alpha) * trader_state["osm_ema_fv"]
+        trader_state["osm_ema_fv"] = ema
         return round(ema)
 
-    def take_best_orders(self, fair_value: int, take_width: int,
-                         orders: List[Order], order_depth: OrderDepth,
-                         position: int):
-        bv = sv = 0
-        if abs(position) >= self.LIMIT:
-            return 0, 0
+    def osm_take_best(self, fair_value: int, orders: List[Order],
+                      order_depth: OrderDepth, position: int):
+        lim = self.LIMIT; bv = sv = 0
+        tw  = OSM_PARAMS["take_width"]
+        if abs(position) >= lim: return 0, 0
         if order_depth.sell_orders:
             ba = min(order_depth.sell_orders)
-            if ba <= fair_value - take_width:
-                qty = min(-order_depth.sell_orders[ba], self.LIMIT - position)
-                if qty > 0:
-                    orders.append(Order("ASH_COATED_OSMIUM", ba, qty))
-                    bv += qty
+            if ba <= fair_value - tw:
+                qty = min(-order_depth.sell_orders[ba], lim - position)
+                if qty > 0: orders.append(Order("ASH_COATED_OSMIUM", ba, qty)); bv += qty
         if order_depth.buy_orders:
             bb = max(order_depth.buy_orders)
-            if bb >= fair_value + take_width:
-                qty = min(order_depth.buy_orders[bb], self.LIMIT + position)
-                if qty > 0:
-                    orders.append(Order("ASH_COATED_OSMIUM", bb, -qty))
-                    sv += qty
+            if bb >= fair_value + tw:
+                qty = min(order_depth.buy_orders[bb], lim + position)
+                if qty > 0: orders.append(Order("ASH_COATED_OSMIUM", bb, -qty)); sv += qty
         return bv, sv
 
-    def market_make(self, orders: List[Order], bid: int, ask: int,
-                    position: int, buy_volume: int, sell_volume: int):
-        bq = self.LIMIT - (position + buy_volume)
-        sq = self.LIMIT + (position - sell_volume)
+    def osm_market_make(self, orders: List[Order], bid: int, ask: int,
+                        position: int, buy_volume: int, sell_volume: int):
+        lim = self.LIMIT
+        bq  = lim - (position + buy_volume)
+        sq  = lim + (position - sell_volume)
         if bq > 0: orders.append(Order("ASH_COATED_OSMIUM", round(bid),  bq))
         if sq > 0: orders.append(Order("ASH_COATED_OSMIUM", round(ask), -sq))
-        return buy_volume, sell_volume
 
-    def make_orders(self, order_depth: OrderDepth, fair_value: int,
-                    position: int, orders: List[Order],
-                    buy_volume: int, sell_volume: int):
-        p = PARAMS
-        asks_out = [pr for pr in order_depth.sell_orders
-                    if pr > fair_value + p["disregard_edge"]]
-        bids_out = [pr for pr in order_depth.buy_orders
-                    if pr < fair_value - p["disregard_edge"]]
+    def osm_make_orders(self, order_depth: OrderDepth, fair_value: int,
+                        position: int, orders: List[Order],
+                        buy_volume: int, sell_volume: int):
+        p = OSM_PARAMS
+        asks_out = [pr for pr in order_depth.sell_orders if pr > fair_value + p["disregard_edge"]]
+        bids_out = [pr for pr in order_depth.buy_orders  if pr < fair_value - p["disregard_edge"]]
 
         ask = fair_value + p["default_edge"]
         if asks_out:
@@ -91,40 +90,94 @@ class Trader:
             bb  = max(bids_out)
             bid = bb if abs(fair_value - bb) <= p["join_edge"] else bb + 1
 
-        return self.market_make(orders, bid, ask, position, buy_volume, sell_volume)
+        self.osm_market_make(orders, bid, ask, position, buy_volume, sell_volume)
+
+    def run_osmium(self, state: TradingState, trader_state: Dict, result: Dict):
+        if "ASH_COATED_OSMIUM" not in state.order_depths:
+            return
+        orders      = []
+        order_depth = state.order_depths["ASH_COATED_OSMIUM"]
+        position    = state.position.get("ASH_COATED_OSMIUM", 0)
+        position    = max(-self.LIMIT, min(self.LIMIT, position))
+        fair_value  = self.osm_fair_value(order_depth, trader_state)
+
+        prem_qty = OSM_PARAMS["premium_qty"]
+        prem_off = OSM_PARAMS["premium_offset"]
+        if prem_qty > 0:
+            if self.LIMIT + position > 0:
+                orders.append(Order("ASH_COATED_OSMIUM", fair_value + prem_off,
+                                    -min(prem_qty, self.LIMIT + position)))
+            if self.LIMIT - position > 0:
+                orders.append(Order("ASH_COATED_OSMIUM", fair_value - prem_off,
+                                     min(prem_qty, self.LIMIT - position)))
+
+        bv, sv = self.osm_take_best(fair_value, orders, order_depth, position)
+        self.osm_make_orders(order_depth, fair_value, position, orders,
+                             bv + prem_qty, sv + prem_qty)
+        result["ASH_COATED_OSMIUM"] = orders
+
+    # ── INTARIAN_PEPPER_ROOT ──────────────────────────────────────────────────
+
+    def ipr_get_mid(self, order_depth: OrderDepth, fallback: float) -> float:
+        has_bid = len(order_depth.buy_orders)  > 0
+        has_ask = len(order_depth.sell_orders) > 0
+        if has_bid and has_ask:
+            return (max(order_depth.buy_orders) + min(order_depth.sell_orders)) / 2.0
+        elif has_bid:
+            return float(max(order_depth.buy_orders))
+        elif has_ask:
+            return float(min(order_depth.sell_orders))
+        return fallback
+
+    def run_pepper(self, state: TradingState, trader_state: Dict, result: Dict):
+        if "INTARIAN_PEPPER_ROOT" not in state.order_depths:
+            return
+        orders      = []
+        order_depth = state.order_depths["INTARIAN_PEPPER_ROOT"]
+        position    = state.position.get("INTARIAN_PEPPER_ROOT", 0)
+        position    = max(-self.LIMIT, min(self.LIMIT, position))
+        ts          = state.timestamp
+        lim         = self.LIMIT
+
+        entry_price = trader_state.get("ipr_entry_price", None)
+        stopped_out = trader_state.get("ipr_stopped_out", False)
+
+        if entry_price is not None and position > 0 and not stopped_out:
+            mid = self.ipr_get_mid(order_depth, float(entry_price))
+            if position * (mid - entry_price) < IPR_STOP_LOSS:
+                stopped_out = True
+                trader_state["ipr_stopped_out"] = True
+
+        if stopped_out or ts >= IPR_EXIT_TIMESTAMP:
+            want = position
+            for px in sorted(order_depth.buy_orders.keys(), reverse=True):
+                if want <= 0: break
+                qty = min(order_depth.buy_orders[px], want)
+                if qty > 0:
+                    orders.append(Order("INTARIAN_PEPPER_ROOT", px, -qty))
+                    want -= qty
+        else:
+            want = lim - position
+            for px in sorted(order_depth.sell_orders.keys()):
+                if want <= 0: break
+                qty = min(-order_depth.sell_orders[px], want)
+                if qty > 0:
+                    orders.append(Order("INTARIAN_PEPPER_ROOT", px, qty))
+                    want -= qty
+                    if entry_price is None:
+                        trader_state["ipr_entry_price"] = float(px)
+                        entry_price = float(px)
+
+        trader_state["ipr_stopped_out"] = stopped_out
+        result["INTARIAN_PEPPER_ROOT"] = orders
+
+    # ── Main ──────────────────────────────────────────────────────────────────
 
     def run(self, state: TradingState):
         result       = {}
         trader_state = jsonpickle.decode(state.traderData) if state.traderData else {}
 
-        if "ASH_COATED_OSMIUM" in state.order_depths:
-            orders      = []
-            order_depth = state.order_depths["ASH_COATED_OSMIUM"]
-            position    = state.position.get("ASH_COATED_OSMIUM", 0)
-            position    = max(-self.LIMIT, min(self.LIMIT, position))
-            fair_value  = self.get_fair_value(order_depth, trader_state)
+        self.run_osmium(state, trader_state, result)
+        self.run_pepper(state, trader_state, result)
 
-            prem_offset = PARAMS["premium_offset"]
-            prem_qty    = PARAMS["premium_qty"]
-
-            # How many units we can reserve for premium orders on each side
-            prem_sv = min(prem_qty, self.LIMIT + position) if self.LIMIT + position > 0 else 0
-            prem_bv = min(prem_qty, self.LIMIT - position) if self.LIMIT - position > 0 else 0
-
-            # Place premium orders first
-            if prem_sv > 0:
-                orders.append(Order("ASH_COATED_OSMIUM", fair_value + prem_offset, -prem_sv))
-            if prem_bv > 0:
-                orders.append(Order("ASH_COATED_OSMIUM", fair_value - prem_offset,  prem_bv))
-
-            # Normal MM — pass premium qty as already-allocated so market_make
-            # reduces its size accordingly and never exceeds position limits
-            bv, sv = self.take_best_orders(fair_value, PARAMS["take_width"],
-                                           orders, order_depth, position)
-            self.make_orders(order_depth, fair_value, position, orders,
-                             bv + prem_bv, sv + prem_sv)
-
-            result["ASH_COATED_OSMIUM"] = orders
-
-        traderData = jsonpickle.encode(trader_state)
-        return result, 0, traderData
+        return result, 0, jsonpickle.encode(trader_state)

@@ -6,16 +6,16 @@ import jsonpickle
 
 
 PARAMS = {
-    "ema_alpha":       0.020,
-    "take_width":      3,
-    "disregard_edge":  6,
+    "ema_alpha":       0.05,
+    "take_width":      1,
+    "disregard_edge":  5,
     "join_edge":       2,
-    "default_edge":    3,
+    "default_edge":    4,
     # Premium sweep layer: posted every tick at fv ± offset.
     # Fills only when an aggressive sweeper clears the book past this price.
     # qty is reserved from the normal MM allocation to stay within position limits.
-    "premium_offset":  20,
-    "premium_qty":     5,
+    "premium_offset":  15,
+    "premium_qty":     1,
 }
 
 POSITION_LIMIT = 80
