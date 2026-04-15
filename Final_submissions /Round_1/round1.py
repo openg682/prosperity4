@@ -2,7 +2,6 @@ from datamodel import OrderDepth, TradingState, Order
 from typing import List, Dict
 import jsonpickle
 
-
 # ── ASH_COATED_OSMIUM params ──────────────────────────────────────────────────
 
 OSM_PARAMS = {
@@ -17,8 +16,9 @@ OSM_PARAMS = {
 
 # ── INTARIAN_PEPPER_ROOT params ───────────────────────────────────────────────
 
-IPR_EXIT_TIMESTAMP = 999200   # last ~7 ticks reserved for aggressive unwind
-IPR_STOP_LOSS      = -3000    # exit immediately if MTM drops below this
+IPR_STOP_LOSS = -3000   # unwind immediately if MTM drops below this
+                        # worst historical dip = -862; -3000 = clear reversal signal
+                        # IMC closes open positions at fair value so no exit needed
 
 POSITION_LIMIT = 80
 
@@ -119,13 +119,11 @@ class Trader:
     # ── INTARIAN_PEPPER_ROOT ──────────────────────────────────────────────────
 
     def ipr_get_mid(self, order_depth: OrderDepth, fallback: float) -> float:
-        has_bid = len(order_depth.buy_orders)  > 0
-        has_ask = len(order_depth.sell_orders) > 0
-        if has_bid and has_ask:
+        if order_depth.buy_orders and order_depth.sell_orders:
             return (max(order_depth.buy_orders) + min(order_depth.sell_orders)) / 2.0
-        elif has_bid:
+        elif order_depth.buy_orders:
             return float(max(order_depth.buy_orders))
-        elif has_ask:
+        elif order_depth.sell_orders:
             return float(min(order_depth.sell_orders))
         return fallback
 
@@ -136,19 +134,20 @@ class Trader:
         order_depth = state.order_depths["INTARIAN_PEPPER_ROOT"]
         position    = state.position.get("INTARIAN_PEPPER_ROOT", 0)
         position    = max(-self.LIMIT, min(self.LIMIT, position))
-        ts          = state.timestamp
         lim         = self.LIMIT
 
         entry_price = trader_state.get("ipr_entry_price", None)
         stopped_out = trader_state.get("ipr_stopped_out", False)
 
+        # Stop-loss: if MTM drops below threshold, unwind immediately
         if entry_price is not None and position > 0 and not stopped_out:
             mid = self.ipr_get_mid(order_depth, float(entry_price))
             if position * (mid - entry_price) < IPR_STOP_LOSS:
                 stopped_out = True
                 trader_state["ipr_stopped_out"] = True
 
-        if stopped_out or ts >= IPR_EXIT_TIMESTAMP:
+        if stopped_out:
+            # Emergency unwind: hit bids to flatten
             want = position
             for px in sorted(order_depth.buy_orders.keys(), reverse=True):
                 if want <= 0: break
@@ -157,16 +156,15 @@ class Trader:
                     orders.append(Order("INTARIAN_PEPPER_ROOT", px, -qty))
                     want -= qty
         else:
-            want = lim - position
-            for px in sorted(order_depth.sell_orders.keys()):
-                if want <= 0: break
-                qty = min(-order_depth.sell_orders[px], want)
-                if qty > 0:
-                    orders.append(Order("INTARIAN_PEPPER_ROOT", px, qty))
-                    want -= qty
-                    if entry_price is None:
-                        trader_state["ipr_entry_price"] = float(px)
-                        entry_price = float(px)
+            # Accumulate to max long: single order at best ask each tick.
+            # Only hits level 1 → cheaper avg entry than walking all levels.
+            # IMC closes open positions at fair value so no explicit exit needed.
+            want     = lim - position
+            best_ask = min(order_depth.sell_orders.keys()) if order_depth.sell_orders else None
+            if want > 0 and best_ask is not None:
+                orders.append(Order("INTARIAN_PEPPER_ROOT", best_ask, want))
+                if entry_price is None:
+                    trader_state["ipr_entry_price"] = float(best_ask)
 
         trader_state["ipr_stopped_out"] = stopped_out
         result["INTARIAN_PEPPER_ROOT"] = orders
