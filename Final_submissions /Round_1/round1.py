@@ -4,11 +4,16 @@ import jsonpickle
 
 
 PARAMS = {
-    "ema_alpha":       0.015,   # slow EMA tracks sinusoidal FV (period ~4000 ticks, amp ~4)
-    "take_width":      4,
+    "ema_alpha":       0.020,
+    "take_width":      3,
     "disregard_edge":  6,
     "join_edge":       2,
     "default_edge":    3,
+    # Premium sweep layer: posted every tick at fv ± offset.
+    # Fills only when an aggressive sweeper clears the book past this price.
+    # qty is reserved from the normal MM allocation to stay within position limits.
+    "premium_offset":  20,
+    "premium_qty":     5,
 }
 
 POSITION_LIMIT = 80
@@ -19,18 +24,6 @@ class Trader:
         self.LIMIT = POSITION_LIMIT
 
     def get_fair_value(self, order_depth: OrderDepth, trader_state: Dict) -> int:
-        """
-        Track fair value with a slow EMA instead of fixing it at 10000.
-
-        ASH_COATED_OSMIUM's fair value oscillates sinusoidally with:
-          - Period  ~ 4000 ticks
-          - Amplitude ~ 3-4 ticks
-        A slow EMA (alpha=0.015) tracks this component while ignoring
-        the high-frequency noise from the ±8 book-clearing events.
-
-        Cold-start: seed from the first observed mid so we don't quote
-        stale on tick 0 (same fix applied to INTARIAN_PEPPER_ROOT).
-        """
         if order_depth.buy_orders and order_depth.sell_orders:
             mid = (max(order_depth.buy_orders) + min(order_depth.sell_orders)) / 2.0
         elif order_depth.buy_orders:
@@ -109,17 +102,27 @@ class Trader:
             order_depth = state.order_depths["ASH_COATED_OSMIUM"]
             position    = state.position.get("ASH_COATED_OSMIUM", 0)
             position    = max(-self.LIMIT, min(self.LIMIT, position))
-
             fair_value  = self.get_fair_value(order_depth, trader_state)
-            bv = sv = 0
 
-            b, s = self.take_best_orders(fair_value, PARAMS["take_width"],
-                                         orders, order_depth, position)
-            bv += b; sv += s
+            prem_offset = PARAMS["premium_offset"]
+            prem_qty    = PARAMS["premium_qty"]
 
-            b, s = self.make_orders(order_depth, fair_value, position,
-                                    orders, bv, sv)
-            bv += b; sv += s
+            # How many units we can reserve for premium orders on each side
+            prem_sv = min(prem_qty, self.LIMIT + position) if self.LIMIT + position > 0 else 0
+            prem_bv = min(prem_qty, self.LIMIT - position) if self.LIMIT - position > 0 else 0
+
+            # Place premium orders first
+            if prem_sv > 0:
+                orders.append(Order("ASH_COATED_OSMIUM", fair_value + prem_offset, -prem_sv))
+            if prem_bv > 0:
+                orders.append(Order("ASH_COATED_OSMIUM", fair_value - prem_offset,  prem_bv))
+
+            # Normal MM — pass premium qty as already-allocated so market_make
+            # reduces its size accordingly and never exceeds position limits
+            bv, sv = self.take_best_orders(fair_value, PARAMS["take_width"],
+                                           orders, order_depth, position)
+            self.make_orders(order_depth, fair_value, position, orders,
+                             bv + prem_bv, sv + prem_sv)
 
             result["ASH_COATED_OSMIUM"] = orders
 
