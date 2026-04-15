@@ -12,6 +12,7 @@ OSM_PARAMS = {
     "default_edge":    4,
     "premium_offset":  15,
     "premium_qty":     1,
+    "skew_factor":     1.7, # Retained: How aggressively to adjust price based on inventory
 }
 
 # ── INTARIAN_PEPPER_ROOT params ───────────────────────────────────────────────
@@ -99,7 +100,12 @@ class Trader:
         order_depth = state.order_depths["ASH_COATED_OSMIUM"]
         position    = state.position.get("ASH_COATED_OSMIUM", 0)
         position    = max(-self.LIMIT, min(self.LIMIT, position))
-        fair_value  = self.osm_fair_value(order_depth, trader_state)
+        
+        base_fair_value = self.osm_fair_value(order_depth, trader_state)
+        
+        # INVENTORY SKEW: Adjust FV based on current position to avoid hitting limits
+        skew = int(round((position / self.LIMIT) * OSM_PARAMS["skew_factor"]))
+        fair_value = base_fair_value - skew
 
         prem_qty = OSM_PARAMS["premium_qty"]
         prem_off = OSM_PARAMS["premium_offset"]
