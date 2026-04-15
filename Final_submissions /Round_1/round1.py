@@ -12,15 +12,12 @@ OSM_PARAMS = {
     "default_edge":    4,
     "premium_offset":  15,
     "premium_qty":     1,
-    "skew_factor":     1.7, # Retained: How aggressively to adjust price based on inventory
+    "skew_factor":     1.7, # Optimal skew factor selected
 }
 
 # ── INTARIAN_PEPPER_ROOT params ───────────────────────────────────────────────
 
 IPR_STOP_LOSS = -3000   # unwind immediately if MTM drops below this
-                        # worst historical dip = -862; -3000 = clear reversal signal
-                        # IMC closes open positions at fair value so no exit needed
-
 POSITION_LIMIT = 80
 
 
@@ -139,7 +136,6 @@ class Trader:
         orders      = []
         order_depth = state.order_depths["INTARIAN_PEPPER_ROOT"]
         position    = state.position.get("INTARIAN_PEPPER_ROOT", 0)
-        position    = max(-self.LIMIT, min(self.LIMIT, position))
         lim         = self.LIMIT
 
         entry_price = trader_state.get("ipr_entry_price", None)
