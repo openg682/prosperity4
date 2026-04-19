@@ -3,10 +3,14 @@ import jsonpickle
 
 PRODUCT = "INTARIAN_PEPPER_ROOT"
 POSITION_LIMIT = 80
+OPENING_TARGET = 60
+FULL_SIZE_TIMESTAMP = 1000
+
 
 class Trader:
     def __init__(self):
         self.limit = POSITION_LIMIT
+        self.anchor = None
 
     def run(self, state: TradingState):
         result = {}
@@ -17,40 +21,31 @@ class Trader:
             return result, 0, jsonpickle.encode(trader_state)
 
         position = state.position.get(PRODUCT, 0)
+        timestamp = state.timestamp
         orders = []
 
         best_bid = max(order_depth.buy_orders) if order_depth.buy_orders else None
         best_ask = min(order_depth.sell_orders) if order_depth.sell_orders else None
 
         if best_bid is not None and best_ask is not None:
-            
-            # Phase 1: CORE 79 MAINTENANCE
-            # If we somehow drop below 79 (e.g., tick 0, or our top-tick sell got hit),
-            # we instantly buy the market to secure our trend exposure.
-            if position < 79:
-                buy_qty = 79 - position
+            current_mid = (best_bid + best_ask) / 2.0
+            self.anchor = current_mid if self.anchor is None else 0.1 * current_mid + 0.9 * self.anchor
+            fair_value = round(self.anchor)
+
+            core_target = OPENING_TARGET if timestamp < FULL_SIZE_TIMESTAMP else 79
+
+            if position < core_target:
+                buy_qty = core_target - position
                 orders.append(Order(PRODUCT, best_ask, buy_qty))
-                
-            # Phase 2: THE ROTATING DOOR (Continuous Buy 1 / Sell 1)
-            if position == 79:
-                # We skew BOTH orders upward to account for the linear trend.
-                our_bid = best_bid + 1
-                our_ask = best_ask + 1
-                
-                # Prevent our bid from crossing the spread if the book gets tight
-                if our_bid >= best_ask:
-                    our_bid = best_bid
-                    
-                # Place both sides continuously
-                orders.append(Order(PRODUCT, our_bid, 1))   # Buy 1
-                orders.append(Order(PRODUCT, our_ask, -1))  # Sell 1
-                
-            # Phase 3: PROFIT TAKING
-            # If our Buy 1 trap above triggered, we now have 80.
-            # We immediately sell 1 back at the current best ask to scalp the spread
-            # and return to our 79 baseline.
-            elif position == 80:
-                orders.append(Order(PRODUCT, best_ask, -1))
+
+            if position <= core_target:
+                micro_bid = min(fair_value - 1, best_ask - 1)
+                orders.append(Order(PRODUCT, micro_bid, 1))
+            elif position == core_target + 1:
+                micro_ask = max(fair_value + 1, best_bid + 1)
+                orders.append(Order(PRODUCT, micro_ask, -1))
+            elif position > core_target + 1:
+                orders.append(Order(PRODUCT, best_bid, -(position - core_target)))
 
         result[PRODUCT] = orders
         return result, 0, jsonpickle.encode(trader_state)
