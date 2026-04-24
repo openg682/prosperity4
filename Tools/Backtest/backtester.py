@@ -383,14 +383,14 @@ def load_algorithm(name: str) -> TradingAlgorithm:
 
 if __name__ == '__main__':
     PRICE_FILES = [
-        '../../Files/Prices/prices_round_2_day_-1.csv',
-        '../../Files/Prices/prices_round_2_day_0.csv',
-        '../../Files/Prices/prices_round_2_day_1.csv',
+        '../../Files/Prices/prices_round_3_day_0.csv',
+        '../../Files/Prices/prices_round_3_day_1.csv',
+        '../../Files/Prices/prices_round_3_day_2.csv',
     ]
     TRADE_FILES = [
-        '../../Files/Trades/trades_round_2_day_-1.csv',
-        '../../Files/Trades/trades_round_2_day_0.csv',
-        '../../Files/Trades/trades_round_2_day_1.csv',
+        '../../Files/Trades/trades_round_3_day_0.csv',
+        '../../Files/Trades/trades_round_3_day_1.csv',
+        '../../Files/Trades/trades_round_3_day_2.csv',
     ]
 
     strategy_arg = sys.argv[1] if len(sys.argv) > 1 else 'combined'

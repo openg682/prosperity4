@@ -3,20 +3,12 @@ WHY THIS PRODUCT IS A MM TARGET:
     - Mean ~9990, std ~32, near-zero correlation with anything else
     - 16-wide best bid/ask spread, 73% win rate buying at bid+1
     - Lag-1 autocorr -0.13 (weak mean reversion at tick scale)
-    - Average of ~13.7 PnL per round-trip if both sides fill
 
-STRATEGY:
-    - Fair value = slow EMA of mid (alpha=0.005, very stable)
-    - TAKE: lift any ask <= fair-2, hit any bid >= fair+2
-    - MAKE: post passive 1 tick inside best b/a, with quote skew based on inventory
-    - Inventory skew: 1 tick of skew per +/-50 units of position
-
-PARAMS to tune:
-    - take_edge        : higher = fewer trades but more profitable per trade
-    - make_inside      : how aggressively to undercut existing best b/a
-    - make_size        : passive quote size per side
-    - skew_per_unit    : smaller = stronger inventory mean reversion
-    - ema_alpha        : larger = faster fair value updates
+OPTIMIZATIONS APPLIED:
+    - Slower EMA (0.0005) ensures fair value anchors strongly.
+    - Base take_edge (6) prevents paying the 16-wide spread prematurely.
+    - Wider skew_per_unit (80) maximizes spread capture before yielding.
+    - NEW: Inventory-Asymmetric Takes (Urgency scaling) to safely flatten risk.
 """
 
 import json
@@ -24,21 +16,20 @@ import math
 from typing import Dict, List
 from datamodel import OrderDepth, TradingState, Order
 
-
 # ============================================================================
-# PARAMETERS  (tune these)
+# PARAMETERS 
 # ============================================================================
 PARAMS = {
-    "ema_alpha":     0.005,
-    "take_edge":     2,
-    "make_inside":   1,
-    "make_size":     40,
-    "skew_per_unit": 50,
+    "ema_alpha":        0.0006,
+    "base_take_edge":   6,
+    "take_skew_factor": 3,   # How many ticks to flex the take edge based on inventory
+    "make_inside":      1,
+    "make_size":        9,  # Increased to 50 to perfectly quarter our 200 limit
+    "skew_per_unit":    370,
 }
 
 PRODUCT = "HYDROGEL_PACK"
 LIMIT = 200
-
 
 # ============================================================================
 # TRADER
@@ -86,12 +77,19 @@ class Trader:
         fair = self.ema
 
         pos = state.position.get(PRODUCT, 0)
-        take_edge = PARAMS["take_edge"]
         eff = pos
 
-        # === TAKE: lift cheap asks ===
+        # === NEW: Asymmetric Take Edge ===
+        # If pos is positive, take_skew is positive.
+        take_skew = (eff / LIMIT) * PARAMS["take_skew_factor"]
+        
+        # If pos > 0: harder to buy (higher edge needed), easier to sell (lower edge needed)
+        take_edge_buy = PARAMS["base_take_edge"] + take_skew
+        take_edge_sell = PARAMS["base_take_edge"] - take_skew
+
+        # === TAKE: lift cheap asks (BUYING) ===
         for ask_px in sorted(od.sell_orders.keys()):
-            if ask_px > fair - take_edge:
+            if ask_px > fair - take_edge_buy:
                 break
             avail = LIMIT - eff
             if avail <= 0:
@@ -101,9 +99,9 @@ class Trader:
                 result[PRODUCT].append(Order(PRODUCT, ask_px, qty))
                 eff += qty
 
-        # === TAKE: hit pricey bids ===
+        # === TAKE: hit pricey bids (SELLING) ===
         for bid_px in sorted(od.buy_orders.keys(), reverse=True):
-            if bid_px < fair + take_edge:
+            if bid_px < fair + take_edge_sell:
                 break
             avail = LIMIT + eff
             if avail <= 0:
@@ -117,6 +115,7 @@ class Trader:
         inside = PARAMS["make_inside"]
         make_bid = b + inside
         make_ask = a - inside
+        
         if make_bid >= make_ask:
             make_bid = int(math.floor(fair)) - 2
             make_ask = int(math.ceil(fair)) + 2
@@ -124,12 +123,15 @@ class Trader:
         skew = -int(round(eff / PARAMS["skew_per_unit"]))
         make_bid += skew
         make_ask += skew
+        
+        # Safe circuit breaker - do not touch!
         if make_bid >= make_ask:
             return result, 0, self._serialize_state()
 
         size = PARAMS["make_size"]
         buy_room = LIMIT - eff
         sell_room = LIMIT + eff
+        
         if buy_room > 0:
             result[PRODUCT].append(Order(PRODUCT, int(make_bid), min(size, buy_room)))
         if sell_room > 0:
