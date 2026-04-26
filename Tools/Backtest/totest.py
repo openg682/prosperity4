@@ -1,5 +1,3 @@
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 """
 WHY THIS PRODUCT IS A MM TARGET:
     - Mean ~9990, std ~32, near-zero correlation with anything else
@@ -7,10 +5,13 @@ WHY THIS PRODUCT IS A MM TARGET:
     - Lag-1 autocorr -0.13 (weak mean reversion at tick scale)
 
 OPTIMIZATIONS APPLIED:
-    - Slower EMA (0.0005) ensures fair value anchors strongly.
+    - Slower EMA (0.0006) ensures fair value anchors strongly for make quotes.
     - Base take_edge (6) prevents paying the 16-wide spread prematurely.
-    - Wider skew_per_unit (80) maximizes spread capture before yielding.
-    - NEW: Inventory-Asymmetric Takes (Urgency scaling) to safely flatten risk.
+    - skew_per_unit (50) gives real inventory skew: -1 tick at pos=50, -4 at pos=200.
+    - Inventory-Asymmetric Takes (Urgency scaling) to safely flatten risk.
+    - Trend gate: suppresses takes that add inventory in the trend direction.
+      When EMA lags mid by > trend_gate ticks, the strategy was buying into
+      downtrends / selling into uptrends. Gate kills that adverse selection.
 """
 
 import json
@@ -19,15 +20,17 @@ from typing import Dict, List
 from datamodel import OrderDepth, TradingState, Order
 
 # ============================================================================
-# PARAMETERS 
+# PARAMETERS
 # ============================================================================
 PARAMS = {
     "ema_alpha":        0.0006,
     "base_take_edge":   6,
     "take_skew_factor": 3,   # How many ticks to flex the take edge based on inventory
     "make_inside":      1,
-    "make_size":        9,  # Increased to 50 to perfectly quarter our 200 limit
-    "skew_per_unit":    370,
+    "make_size":        9,
+    "skew_per_unit":    150,  # Was 370 (max 1-tick skew). 150 gives 1-tick skew from pos=100+.
+    "trend_gate":       30,   # Suppress takes when |mid - EMA| > this (trending market)
+                              # Gate must be > mean EMA lag (~22 ticks) to avoid over-suppression.
 }
 
 PRODUCT = "HYDROGEL_PACK"
@@ -81,13 +84,20 @@ class Trader:
         pos = state.position.get(PRODUCT, 0)
         eff = pos
 
-        # === NEW: Asymmetric Take Edge ===
-        # If pos is positive, take_skew is positive.
+        # === Asymmetric Take Edge (inventory skew) ===
         take_skew = (eff / LIMIT) * PARAMS["take_skew_factor"]
-        
-        # If pos > 0: harder to buy (higher edge needed), easier to sell (lower edge needed)
-        take_edge_buy = PARAMS["base_take_edge"] + take_skew
+        take_edge_buy  = PARAMS["base_take_edge"] + take_skew
         take_edge_sell = PARAMS["base_take_edge"] - take_skew
+
+        # === Trend Gate: suppress takes that add inventory into a trend ===
+        # ema_diff > 0  → mid above EMA → uptrend  → don't sell aggressively
+        # ema_diff < 0  → mid below EMA → downtrend → don't buy aggressively
+        ema_diff = cur_mid - fair
+        gate = PARAMS["trend_gate"]
+        if ema_diff < -gate:
+            take_edge_buy = 999   # disable aggressive buys in downtrend
+        if ema_diff > gate:
+            take_edge_sell = 999  # disable aggressive sells in uptrend
 
         # === TAKE: lift cheap asks (BUYING) ===
         for ask_px in sorted(od.sell_orders.keys()):
