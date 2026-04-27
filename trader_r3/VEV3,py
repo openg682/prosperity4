@@ -1,0 +1,182 @@
+import math
+from datamodel import OrderDepth, UserId, TradingState, Order
+from typing import List, Dict, Any
+
+class Trader:
+    
+    def __init__(self):
+        # We target the most liquid, mispriced 'Belly' of the chain
+        self.target_options = [
+            'VEV_5000', 'VEV_5100', 'VEV_5200', 
+            'VEV_5300', 'VEV_5400', 'VEV_5500'
+        ]
+        self.underlying = 'VELVETFRUIT_EXTRACT'
+        
+        # Hard limits set by exchange
+        self.LIMIT_OPT = 300
+        self.LIMIT_EXTRACT = 200
+        
+        # SOFT LIMITS: Crucial for survival.
+        # We cap options at 100 so our total portfolio Delta NEVER 
+        # mathematically requires more than 200 Extract to hedge.
+        self.SOFT_LIMIT_OPT = 100 
+        
+        # Base volatility anchored slightly below HV to act as a MM spread
+        self.base_vol = 0.24 
+
+    def norm_cdf(self, x: float) -> float:
+        """Approximates the standard normal cumulative distribution function."""
+        return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+    def bs_price_delta(self, S: float, K: float, T: float, r: float, sigma: float):
+        """Calculates Black-Scholes Fair Value and Delta."""
+        # Handle expiration or broken volatility edge cases
+        if T <= 0 or sigma <= 0:
+            return max(0.0, S - K), (1.0 if S > K else 0.0)
+            
+        d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        
+        fv = S * self.norm_cdf(d1) - K * math.exp(-r * T) * self.norm_cdf(d2)
+        delta = self.norm_cdf(d1)
+        return fv, delta
+
+    def get_mid_price(self, order_depth: OrderDepth) -> float:
+        """Safely calculates the mid price from an order book."""
+        best_bid = max(order_depth.buy_orders.keys()) if len(order_depth.buy_orders) > 0 else None
+        best_ask = min(order_depth.sell_orders.keys()) if len(order_depth.sell_orders) > 0 else None
+        
+        if best_bid and best_ask:
+            return (best_bid + best_ask) / 2.0
+        elif best_bid:
+            return best_bid
+        elif best_ask:
+            return best_ask
+        return 0.0
+
+    def run(self, state: TradingState):
+        """Core execution logic called on every simulation tick."""
+        
+        result: Dict[str, List[Order]] = {}
+        conversions = 0
+        traderData = state.traderData if state.traderData else ""
+        
+        # 1. Get the underlying asset price
+        if self.underlying not in state.order_depths:
+            return result, conversions, traderData
+            
+        S = self.get_mid_price(state.order_depths[self.underlying])
+        if S == 0.0:
+            return result, conversions, traderData
+
+        # Estimate Time to Expiry (TTE)
+        # Using an average of 6 days (6/365) to stabilize the pricing model
+        T = 6.0 / 365.0
+        r = 0.0 
+
+        # 2. Track total Portfolio Delta for Hedging
+        total_delta = 0.0
+        current_extract_pos = state.position.get(self.underlying, 0)
+        total_delta += current_extract_pos # 1 underlying = 1 delta
+
+        # 3. Market Make the Options (The Profit Engine)
+        for opt in self.target_options:
+            if opt not in state.order_depths:
+                continue
+                
+            K = float(opt.split('_')[1])
+            fv, delta = self.bs_price_delta(S, K, T, r, self.base_vol)
+            
+            current_pos = state.position.get(opt, 0)
+            total_delta += current_pos * delta
+            
+            orders: List[Order] = []
+            order_depth = state.order_depths[opt]
+            
+            # The 5400 Kink Overweight:
+            # We skew our fair value calculation to aggressively buy 5400 and sell 5300/5500
+            if opt == 'VEV_5400':
+                my_bid = math.floor(fv - 0.5) # Bid more aggressively
+                my_ask = math.ceil(fv + 2.0)  # Demand a higher premium to sell
+            elif opt in ['VEV_5300', 'VEV_5500']:
+                my_bid = math.floor(fv - 2.0) # Bid lower
+                my_ask = math.ceil(fv + 0.5)  # Sell more aggressively
+            else:
+                my_bid = math.floor(fv - 1.5)
+                my_ask = math.ceil(fv + 1.5)
+
+            # Available capacity using our Soft Limit to prevent hedge blockages
+            space_to_buy = self.SOFT_LIMIT_OPT - current_pos
+            space_to_sell = -self.SOFT_LIMIT_OPT - current_pos
+
+            # Execute Aggressive Buy Orders (Take liquidity if highly mispriced)
+            if len(order_depth.sell_orders) > 0:
+                best_ask = min(order_depth.sell_orders.keys())
+                if best_ask < my_bid and space_to_buy > 0:
+                    # Note: sell_orders values are negative. We want to buy positive quantity.
+                    ask_vol = order_depth.sell_orders[best_ask] 
+                    trade_qty = min(space_to_buy, abs(ask_vol))
+                    orders.append(Order(opt, best_ask, trade_qty))
+                    total_delta += trade_qty * delta
+
+            # Execute Aggressive Sell Orders
+            if len(order_depth.buy_orders) > 0:
+                best_bid = max(order_depth.buy_orders.keys())
+                if best_bid > my_ask and space_to_sell < 0:
+                    # Note: buy_orders values are positive. We want to sell negative quantity.
+                    bid_vol = order_depth.buy_orders[best_bid]
+                    trade_qty = max(space_to_sell, -bid_vol) 
+                    orders.append(Order(opt, best_bid, trade_qty))
+                    total_delta += trade_qty * delta
+                    
+            # If no aggressive trades, place passive orders (Market Making)
+            # Only place passive orders if we aren't near the soft limit
+            if len(orders) == 0:
+                if space_to_buy > 10:
+                    orders.append(Order(opt, my_bid, 10))
+                if space_to_sell < -10:
+                    orders.append(Order(opt, my_ask, -10))
+                    
+            result[opt] = orders
+
+        # 4. Execute the Delta Hedge (The Shield)
+        # If total_delta is positive, we are synthetically long -> MUST SELL Extract
+        # If total_delta is negative, we are synthetically short -> MUST BUY Extract
+        hedge_orders: List[Order] = []
+        extract_depth = state.order_depths[self.underlying]
+        
+        # We only cross the spread to hedge if our exposure drifts beyond 10 Delta
+        # This prevents "over-hedging" and bleeding cash to spread costs
+        if abs(total_delta) > 10.0:
+            hedge_qty = -int(round(total_delta))
+            
+            # Strict enforcement of the 200 Exchange Limit
+            expected_pos = current_extract_pos + hedge_qty
+            if expected_pos > self.LIMIT_EXTRACT:
+                hedge_qty = self.LIMIT_EXTRACT - current_extract_pos
+            elif expected_pos < -self.LIMIT_EXTRACT:
+                hedge_qty = -self.LIMIT_EXTRACT - current_extract_pos
+                
+            if hedge_qty > 0 and len(extract_depth.sell_orders) > 0:
+                # Need to buy: cross the spread
+                best_ask = min(extract_depth.sell_orders.keys())
+                ask_vol = extract_depth.sell_orders[best_ask]
+                
+                # Take up to the available volume
+                trade_qty = min(hedge_qty, abs(ask_vol))
+                if trade_qty > 0:
+                    hedge_orders.append(Order(self.underlying, best_ask, trade_qty))
+                    
+            elif hedge_qty < 0 and len(extract_depth.buy_orders) > 0:
+                # Need to sell: cross the spread
+                best_bid = max(extract_depth.buy_orders.keys())
+                bid_vol = extract_depth.buy_orders[best_bid]
+                
+                # Trade up to available volume (remember hedge_qty is negative here)
+                trade_qty = max(hedge_qty, -bid_vol)
+                if trade_qty < 0:
+                    hedge_orders.append(Order(self.underlying, best_bid, trade_qty))
+                
+        result[self.underlying] = hedge_orders
+        
+        return result, conversions, traderData

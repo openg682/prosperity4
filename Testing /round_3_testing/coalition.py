@@ -21,7 +21,7 @@ VFE_LIMIT = 200   # VELVETFRUIT_EXTRACT
 #   Total max delta ~186, within 200 VFE capacity
 ITM_LIMITS   = {5000: 60, 5100: 50, 5200: 40}  # per-strike caps (was flat 100)
 ITM_MM_EDGE  = 1.5   # asks post at fair+1.5 ≈ inside market spread
-ITM_SNIPE    = 3.0   # requires genuine 3pt dislocation before sniping
+ITM_SNIPE    = 2.5   # requires genuine 3pt dislocation before sniping
 DELTA_CAP    = 130   # was 160 — gate buys before hedge capacity is breached
 
 # Sigma: seed value; overridden each tick by adaptive IV estimate from market
