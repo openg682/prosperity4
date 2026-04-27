@@ -100,7 +100,7 @@ class Trader:
         except: td = {}
 
         # ── 1. TIME & VOLUME SCALING ──────────────────────────────
-        day, prev_ts = td.get("day", 0), td.get("prev_ts", 0)
+        day, prev_ts = td.get("day", 4), td.get("prev_ts", 0)
         if state.timestamp < prev_ts and prev_ts > 800_000: day += 1
         td["day"], td["prev_ts"] = day, state.timestamp
 
