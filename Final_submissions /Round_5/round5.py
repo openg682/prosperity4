@@ -1,627 +1,276 @@
-from Tools.Backtest.datamodel import OrderDepth, TradingState, Order
-from typing import List, Dict, Optional
-import jsonpickle
-import numpy as np
-import math
+"""
+Round 5 — 50 products, position limit 10, no counterparty signal.
 
-# Define Product constants matching data file names where applicable
-class Product:
-    KELP = "KELP"
-    RAINFOREST_RESIN = "RAINFOREST_RESIN"
-    SQUID_INK = "SQUID_INK"
-    CROISSANTS = "CROISSANTS" # Match data file name
-    JAMS = "JAMS"         # Match data file name
-    DJEMBE = "DJEMBE"         # Match data file name (used DJEMBE in LIMIT/PARAMS keys for consistency)
-    PICNIC_BASKET1 = "PICNIC_BASKET1"
-    PICNIC_BASKET2 = "PICNIC_BASKET2"
-    # Helper list of all product names matching the data files/class constants
-    ALL = [KELP, RAINFOREST_RESIN, SQUID_INK, CROISSANTS, JAMS, DJEMBE, PICNIC_BASKET1, PICNIC_BASKET2]
-    MARKET_MAKING_PRODUCTS = [KELP, RAINFOREST_RESIN, SQUID_INK, CROISSANTS, JAMS, DJEMBE] # Products for basic MM
-    BASKET_PRODUCTS = [PICNIC_BASKET1, PICNIC_BASKET2]
-    BASKET1_COMPONENTS = {CROISSANTS: 6, JAMS: 3, DJEMBE: 1}
-    BASKET2_COMPONENTS = {CROISSANTS: 4, JAMS: 2}
+== ITERATION HISTORY ==
+v1 (take-only):                Day-4 backtest -1.56M (catastrophic).
+v2 (passive MM, asym gate):    Day-4 backtest +158k.
+v3 (basket xl_only):           Day-4 backtest +173k.
+v3 LIVE (1000-tick window):    +22,545.
+v4 (this file):                Same window backtest predicts +29,659 (+31.4% vs v3 live).
+
+== LIVE-DATA-DRIVEN FIXES IN v4 ==
+
+1. **Momentum filter** — biggest single improvement (+~3k expected).
+   The v3 live run lost ~$22k on 4 products that trended hard:
+     PLANETARY_RINGS (-7.3k, -778 tick move), SPACE_GRAY (-4.8k, -669),
+     LAMB_WOOL (-4.5k, -591), DARK_MATTER (-3.8k, -407).
+   These were all passive-quote products getting run over by trends.
+   Fix: maintain an EWMA of one-tick returns (span 20). When |momentum|
+   exceeds 3 ticks/tick, skip the side facing the trend (block bids when
+   rising, asks when falling). The aligned side stays open.
+
+2. **Asymmetric imbalance gate** — never gate the side that REDUCES |pos|.
+   Previously we'd shut off bids whenever the book was bid-heavy — even when
+   we were short and BUYING was the recovery direction. Result: persistent
+   one-way drift (live ended -656 net across 50 products). Now imbalance
+   only gates the side that would INCREASE risk.
+
+3. **Stronger inventory skew** (0.5 → 1.0 per unit). Live ended at -656 net
+   position; backtest ended +207. Doubling the skew pulls fair more aggressively
+   when inventory builds. End-pos drops to +120 in the backtest.
+
+4. **Drop ROBOT_DISHES AR1 coefficient** — was -0.23 in training, +0.006 in live.
+   Regime change or overfit. Live cost: -3,463. Now plain MM at mid like
+   the rest. Other AR1 products (IRONING -0.127, OXYGEN_SHAKE_EVENING_BREATH
+   -0.128) had live phi matching training and are kept.
+
+5. **PEBBLES_XL basket take** — kept (the basket invariant XS+S+M+L+XL=50,000
+   held perfectly live with std=2.5). XL went from -2,781 (v3 live) to +2,586
+   (v4 backtest) — momentum filter now gates the take when XL is mid-trend.
+
+6. **Quote size 10** (was 5). Lets us fill faster when one-sided flow appears.
+   Marginal +$300 in backtest.
+
+== NOT INCLUDED ==
+- SNACKPACK pair-sum target — drifts day-to-day, EWMA can't keep up. Plain MM
+  on these 5 already profits ~$2.4k/window.
+- Hard inventory flatten at |pos|>=8 — slightly hurt the backtest (no real
+  benefit since improved skew already keeps |pos| low).
+- Wider quote (deeper inside) on trend — not better than just gating.
+- No-quote on trend (block both sides) — too restrictive.
+
+To submit: replace the stub Order/OrderDepth/TradingState classes at the top
+with `from datamodel import Order, OrderDepth, TradingState`.
+"""
+from typing import Dict, List, Tuple
+import json, math
 
 
-# --- Parameters based on Data Analysis (Static values are fallback/initial only) ---
-# Fair Value will be calculated dynamically; other params are starting points.
-PARAMS = {
-    # KELP: Relatively Stable
-    Product.KELP: {
-        "static_fair_value": 2015, # Fallback only
-        "take_width": 5, "clear_width": 10, "disregard_edge": 20, "join_edge": 5, "default_edge": 10,
-        "soft_position_limit": 50,
-        "trend_follow_lookback": 5, # Lookback period for trend detection
-        "trend_follow_threshold": 2, # Minimum price change to consider a trend
-    },
-    # RAINFOREST_RESIN: Stable around 10000
-    Product.RAINFOREST_RESIN: {
-        "static_fair_value": 10000, # Fallback only
-        "take_width": 0.001, "clear_width": 0.0005, "disregard_edge": 0.01, "join_edge": 0.0005, "default_edge": 0.001,
-        "soft_position_limit": 50,
-        "trend_follow_lookback": 5,
-        "trend_follow_threshold": 0.0002,
-    },
-    # SQUID_INK: Drifts Down
-    Product.SQUID_INK: {
-        "static_fair_value": 1968, # Fallback only
-        "take_width": 15, "clear_width": 10, "disregard_edge": 70, "join_edge": 20, "default_edge": 35,
-        "soft_position_limit": 45,
-        "trend_follow_lookback": 5,
-        "trend_follow_threshold": 5,
-    },
-    # CROISSANTS: Drifts Down
-    Product.CROISSANTS: {
-        "static_fair_value": 4300, # Fallback only
-        "take_width": 0.5, "clear_width": 0.5, "disregard_edge": 5, "join_edge": 0.5, "default_edge": 1,
-        "soft_position_limit": 225,
-        "trend_follow_lookback": 5,
-        "trend_follow_threshold": 0.2,
-    },
-    # JAMS: Drifts Down
-    Product.JAMS: {
-        "static_fair_value": 6550, # Fallback only
-        "take_width": 1, "clear_width": 0.5, "disregard_edge": 6, "join_edge": 0.5, "default_edge": 1.5,
-        "soft_position_limit": 315,
-        "trend_follow_lookback": 5,
-        "trend_follow_threshold": 0.3,
-    },
-    # DJEMBE: Drifts Down
-    Product.DJEMBE: { # Using DJEMBE as key, matches data name DJEMBE
-        "static_fair_value": 13380, # Fallback only
-        "take_width": 1, "clear_width": 0.5, "disregard_edge": 10, "join_edge": 0.5, "default_edge": 1,
-        "soft_position_limit": 54,
-        "trend_follow_lookback": 5,
-        "trend_follow_threshold": 0.5,
-    },
-    # --- Baskets: Fair value derived from dynamic component values ---
-    Product.PICNIC_BASKET1: {
-        "static_fair_value": 58800, # Fallback only
-        "take_width": 5, "clear_width": 3, "disregard_edge": 20, "join_edge": 2, "default_edge": 6,
-        "soft_position_limit": 54,
-    },
-    Product.PICNIC_BASKET2: {
-        "static_fair_value": 30100, # Fallback only
-        "take_width": 3, "clear_width": 2, "disregard_edge": 15, "join_edge": 1.5, "default_edge": 4,
-        "soft_position_limit": 90,
-    },
+# === Stub data classes — replace with `from datamodel import ...` for submission ===
+class Order:
+    def __init__(self, symbol, price, quantity):
+        self.symbol = symbol
+        self.price = int(price)
+        self.quantity = int(quantity)
+    def __repr__(self):
+        return f"Order({self.symbol},p={self.price},q={self.quantity})"
+
+class OrderDepth:
+    def __init__(self):
+        self.buy_orders: Dict[int, int] = {}
+        self.sell_orders: Dict[int, int] = {}
+
+class TradingState:
+    def __init__(self, timestamp, listings, order_depths, own_trades,
+                 market_trades, position, observations, traderData=""):
+        self.timestamp = timestamp
+        self.listings = listings
+        self.order_depths = order_depths
+        self.own_trades = own_trades
+        self.market_trades = market_trades
+        self.position = position
+        self.observations = observations
+        self.traderData = traderData
+
+
+# === Constants ===
+POSITION_LIMIT = 10
+
+PEBBLES = ["PEBBLES_XS", "PEBBLES_S", "PEBBLES_M", "PEBBLES_L", "PEBBLES_XL"]
+PEBBLES_TARGET_SUM = 50_000
+PEBBLES_NOISY_LEG = "PEBBLES_XL"
+BASKET_TAKE_EDGE = 1
+
+# AR(1) return mean-reversion coefficients (validated in live data)
+AR1_PRODUCTS: Dict[str, float] = {
+    "ROBOT_IRONING":               -0.13,   # live phi=-0.127 ✓
+    "OXYGEN_SHAKE_EVENING_BREATH": -0.12,   # live phi=-0.128 ✓
+    "OXYGEN_SHAKE_CHOCOLATE":      -0.09,   # not contradicted by live data
+    # ROBOT_DISHES dropped — live phi=+0.006, original -0.23 was overfit.
 }
+
+ALL_PRODUCTS = [
+    "GALAXY_SOUNDS_BLACK_HOLES", "GALAXY_SOUNDS_DARK_MATTER",
+    "GALAXY_SOUNDS_PLANETARY_RINGS", "GALAXY_SOUNDS_SOLAR_FLAMES", "GALAXY_SOUNDS_SOLAR_WINDS",
+    "MICROCHIP_CIRCLE", "MICROCHIP_OVAL", "MICROCHIP_RECTANGLE", "MICROCHIP_SQUARE", "MICROCHIP_TRIANGLE",
+    "OXYGEN_SHAKE_CHOCOLATE", "OXYGEN_SHAKE_EVENING_BREATH", "OXYGEN_SHAKE_GARLIC",
+    "OXYGEN_SHAKE_MINT", "OXYGEN_SHAKE_MORNING_BREATH",
+    "PANEL_1X2", "PANEL_1X4", "PANEL_2X2", "PANEL_2X4", "PANEL_4X4",
+    "PEBBLES_L", "PEBBLES_M", "PEBBLES_S", "PEBBLES_XL", "PEBBLES_XS",
+    "ROBOT_DISHES", "ROBOT_IRONING", "ROBOT_LAUNDRY", "ROBOT_MOPPING", "ROBOT_VACUUMING",
+    "SLEEP_POD_COTTON", "SLEEP_POD_LAMB_WOOL", "SLEEP_POD_NYLON", "SLEEP_POD_POLYESTER", "SLEEP_POD_SUEDE",
+    "SNACKPACK_CHOCOLATE", "SNACKPACK_PISTACHIO", "SNACKPACK_RASPBERRY", "SNACKPACK_STRAWBERRY", "SNACKPACK_VANILLA",
+    "TRANSLATOR_ASTRO_BLACK", "TRANSLATOR_ECLIPSE_CHARCOAL", "TRANSLATOR_GRAPHITE_MIST",
+    "TRANSLATOR_SPACE_GRAY", "TRANSLATOR_VOID_BLUE",
+    "UV_VISOR_AMBER", "UV_VISOR_MAGENTA", "UV_VISOR_ORANGE", "UV_VISOR_RED", "UV_VISOR_YELLOW",
+]
+
+# Tunables (locked from live-data-aware sweep on the 1000-tick window)
+PASSIVE_QUOTE_SIZE      = 10
+PASSIVE_INSIDE_TICKS    = 1
+INVENTORY_SKEW_PER_UNIT = 1.0
+IMBALANCE_THRESHOLD     = 0.3
+
+MOM_SPAN                = 20      # EWMA of one-tick returns over ~20 ticks
+MOM_THRESHOLD_TICKS     = 3.0     # block trend-facing side when |mom| > this
+
+
+def best_bid_ask(depth):
+    bb = max(depth.buy_orders) if depth.buy_orders else None
+    ba = min(depth.sell_orders) if depth.sell_orders else None
+    bv = abs(depth.buy_orders[bb]) if bb is not None else 0
+    av = abs(depth.sell_orders[ba]) if ba is not None else 0
+    return bb, bv, ba, av
+
+
+def book_mid(depth):
+    bb, _, ba, _ = best_bid_ask(depth)
+    if bb is None or ba is None:
+        return None
+    return (bb + ba) / 2.0
 
 
 class Trader:
-    def __init__(self):
-        # --- Persistent State Variables ---
-        self.mid_price_history: Dict[str, List[float]] = {product: [] for product in Product.ALL}
-        self.current_fair_values: Dict[str, float] = {} # Calculated each step
-        self.pnl: Dict[str, float] = {product: 0.0 for product in Product.ALL} # Example state
-
-        # --- Strategy Parameters ---
-        self.params = PARAMS
-        self.LIMIT = { # Hard position limits
-            Product.KELP: 100, Product.RAINFOREST_RESIN: 150, Product.SQUID_INK: 45,
-            Product.CROISSANTS: 250, Product.JAMS: 350, Product.DJEMBE: 60,
-            Product.PICNIC_BASKET1: 60, Product.PICNIC_BASKET2: 100,
-        }
-        self.window = 10 # SMA window size
-        self.arbitrage_thresholds = { # Per-basket arb thresholds
-            Product.PICNIC_BASKET1: 5.0, Product.PICNIC_BASKET2: 4.0
-        }
-        # List of keys to automatically save/load from traderData
-        self.persisted_keys = ["mid_price_history", "pnl"]
-
-    def _load_trader_data(self, traderData: str):
-        """Loads state variables from traderData string."""
-        if traderData:
-            try:
-                data = jsonpickle.decode(traderData)
-                for key in self.persisted_keys:
-                    if key in data and data[key] is not None: # Check if key exists and value is not None
-                        # Basic type validation could be added here if needed
-                        setattr(self, key, data[key])
-            except Exception as e:
-                print(f"Error loading traderData: {e}. Using defaults.")
-        # Ensure default structures exist if loading failed or data was partial/empty
-        for product in Product.ALL:
-            if not hasattr(self, 'mid_price_history') or product not in self.mid_price_history:
-                if not hasattr(self, 'mid_price_history'): self.mid_price_history = {}
-                self.mid_price_history[product] = []
-            if not hasattr(self, 'pnl') or product not in self.pnl:
-                if not hasattr(self, 'pnl'): self.pnl = {}
-                self.pnl[product] = 0.0
-
-
-    def _save_trader_data(self) -> str:
-        """Saves state variables to traderData string."""
-        data_to_save = {}
-        for key in self.persisted_keys:
-            # Ensure the attribute exists before trying to save it
-            if hasattr(self, key):
-                data_to_save[key] = getattr(self, key)
-        return jsonpickle.encode(data_to_save)
-
-
-    def _get_mid_price(self, product: str, order_depth: OrderDepth) -> Optional[float]:
-        """Safely calculates mid-price from order depth."""
-        if order_depth.sell_orders and order_depth.buy_orders:
-            try:
-                best_ask = min(order_depth.sell_orders.keys())
-                best_bid = max(order_depth.buy_orders.keys())
-                # Prevent division by zero if somehow bid/ask are identical (shouldn't happen in valid book)
-                if best_ask > best_bid:
-                    return (best_ask + best_bid) / 2.0
-                else:
-                    return float(best_bid) # Or best_ask, if they are equal
-            except Exception:
-                # print(f"Warning: Could not calculate mid price for {product}")
-                return None
-        return None
-
-    def _update_fair_value(self, product: str, state: TradingState):
-        """Calculates and updates the dynamic fair value using SMA."""
-        current_mid_price = None
-        order_depth = state.order_depths.get(product)
-
-        if order_depth:
-            current_mid_price = self._get_mid_price(product, order_depth)
-
-        # Update history if we got a valid mid-price
-        if current_mid_price is not None:
-            # Ensure the history list exists for the product
-            if product not in self.mid_price_history: self.mid_price_history[product] = []
-            self.mid_price_history[product].append(current_mid_price)
-            # Trim history to window size
-            if len(self.mid_price_history[product]) > self.window:
-                self.mid_price_history[product] = self.mid_price_history[product][-self.window:]
-
-        # Calculate SMA fair value
-        history = self.mid_price_history.get(product, []) # Use .get for safety
-        if history:
-            # Use SMA if enough data points, otherwise use average of available points
-            min_points_for_sma = max(1, self.window // 2) # Require at least 1 or half window
-            if len(history) >= min_points_for_sma:
-                fair_value = np.mean(history)
-            else: # Use last known mid price if history is too short but non-empty
-                fair_value = history[-1]
-            self.current_fair_values[product] = fair_value
-        else:
-            # Fallback if no history at all: use static estimate
-            if not hasattr(self, 'current_fair_values'): self.current_fair_values = {}
-            self.current_fair_values[product] = self.params[product]["static_fair_value"]
-
-        # --- Special Handling for Baskets (Overwrite with derived value) ---
-        # Ensure component fair values are calculated first (handled by order in `run`)
-        if product == Product.PICNIC_BASKET1:
-            fv_basket = 0.0
-            components_ready = True
-            for comp, qty in Product.BASKET1_COMPONENTS.items():
-                # Use .get for component fair value for safety
-                comp_fv = self.current_fair_values.get(comp)
-                if comp_fv is not None:
-                    fv_basket += qty * comp_fv
-                else:
-                    components_ready = False
-                    break
-            if components_ready:
-                self.current_fair_values[product] = fv_basket
-            # Else: Keep the potentially existing static/last value if components aren't ready
-
-        elif product == Product.PICNIC_BASKET2:
-            fv_basket = 0.0
-            components_ready = True
-            for comp, qty in Product.BASKET2_COMPONENTS.items():
-                comp_fv = self.current_fair_values.get(comp)
-                if comp_fv is not None:
-                    fv_basket += qty * comp_fv
-                else:
-                    components_ready = False
-                    break
-            if components_ready:
-                self.current_fair_values[product] = fv_basket
-            # Else: Keep the potentially existing static/last value if components aren't ready
-
-        # Return the calculated/updated fair value (already stored)
-        # Use .get with fallback for safety
-        return self.current_fair_values.get(product, self.params[product]["static_fair_value"])
-
-    def _trend_follow(self, product: str, state: TradingState) -> List[Order]:
-        """Implements a simple trend following strategy."""
-        orders: List[Order] = []
-        history = self.mid_price_history.get(product)
-        if not history or len(history) < self.params[product].get("trend_follow_lookback", 2):
-            return orders
-
-        lookback = self.params[product].get("trend_follow_lookback")
-        threshold = self.params[product].get("trend_follow_threshold")
-        current_price = history[-1]
-        past_price = history[-lookback]
-
-        position = state.position.get(product, 0)
-        limit_hard = self.LIMIT[product]
-        limit_soft = self.params[product]["soft_position_limit"]
-
-        order_depth = state.order_depths.get(product)
-        if not order_depth or not order_depth.buy_orders or not order_depth.sell_orders:
-            return orders
-
-        best_bid = max(order_depth.buy_orders.keys())
-        best_ask = min(order_depth.sell_orders.keys())
-
-        price_change = current_price - past_price
-
-        if price_change > threshold and position < limit_soft:
-            # Upward trend, consider buying
-            buy_order_price = best_bid
-            buy_quantity = min(limit_hard - position, 1) # Buy a small quantity
-            orders.append(Order(product, buy_order_price, buy_quantity))
-        elif price_change < -threshold and position > -limit_soft:
-            # Downward trend, consider selling
-            sell_order_price = best_ask
-            sell_quantity = max(-limit_hard - position, -1) # Sell a small quantity
-            orders.append(Order(product, sell_order_price, sell_quantity))
-
-        return orders
-
-    # Generic Take Best Orders Function - Respects Soft Limits
-    def _take_best_orders(self, product, fair_value, take_width, orders, order_depth, position):
-        position_limit_hard = self.LIMIT[product]
-        position_limit_soft = self.params[product]["soft_position_limit"]
-        buy_volume = sell_volume = 0
-
-        if abs(position) >= position_limit_hard:
-            return 0, 0
-
-        if order_depth.sell_orders:
-            try:
-                best_ask = min(order_depth.sell_orders)
-                if best_ask <= fair_value - take_width:
-                    ask_volume = -order_depth.sell_orders[best_ask]
-                    if position < 0: max_qty_soft = position_limit_hard - position
-                    else: max_qty_soft = max(0, position_limit_soft - position)
-                    qty_allowed = min(ask_volume, max_qty_soft)
-                    qty_allowed = min(qty_allowed, position_limit_hard - position)
-                    qty = max(0, int(qty_allowed))
-                    if qty > 0:
-                        orders.append(Order(product, best_ask, qty))
-                        buy_volume += qty
-            except Exception as e: print(f"Error taking ask {product}: {e}")
-
-        if order_depth.buy_orders:
-            try:
-                best_bid = max(order_depth.buy_orders)
-                if best_bid >= fair_value + take_width:
-                    bid_volume = order_depth.buy_orders[best_bid]
-                    if position > 0: max_qty_soft = position_limit_hard + position
-                    else: max_qty_soft = max(0, position_limit_soft + position)
-                    qty_allowed = min(bid_volume, max_qty_soft)
-                    qty_allowed = min(qty_allowed, position_limit_hard + position)
-                    qty = max(0, int(qty_allowed))
-                    if qty > 0:
-                        orders.append(Order(product, best_bid, -qty))
-                        sell_volume += qty
-            except Exception as e: print(f"Error taking bid {product}: {e}")
-        return buy_volume, sell_volume
-
-    # Generic Market Make Function - Targets Soft Limits for Quantity
-    def _market_make(self, product, orders, bid, ask, position, buy_volume, sell_volume):
-        position_limit_hard = self.LIMIT[product]
-        position_limit_soft = self.params[product]["soft_position_limit"]
-
-        current_buy_exposure = position + buy_volume
-        buy_target = position_limit_soft
-        buy_qty = max(0, buy_target - current_buy_exposure)
-        buy_qty = min(buy_qty, max(0, position_limit_hard - current_buy_exposure))
-        buy_qty = int(buy_qty)
-        if buy_qty > 0: orders.append(Order(product, int(round(bid)), buy_qty)) # Convert bid to integer
-
-        current_sell_exposure = position - sell_volume
-        sell_target = -position_limit_soft
-        sell_qty = max(0, current_sell_exposure - sell_target)
-        sell_qty = min(sell_qty, max(0, position_limit_hard + current_sell_exposure))
-        sell_qty = int(sell_qty)
-        if sell_qty > 0: orders.append(Order(product, int(round(ask)), -sell_qty)) # Convert ask to integer
-        return
-
-    # Generic Make Orders Function - Implements Skewing with clear_width
-    def _make_orders(self, product, order_depth, fair_value, position, buy_volume, sell_volume):
-        orders = []
-        p = self.params[product]
-        pos = position
-        soft_limit = p["soft_position_limit"]
-        join_edge = p["join_edge"]
-
-        ask_edge = p["default_edge"]
-        bid_edge = p["default_edge"]
-        skew_threshold = soft_limit * 0.5
-        clear_width_val = p["clear_width"]
-        if abs(pos) > skew_threshold and soft_limit > 0:
-            skew_factor = min(1.0, (abs(pos) - skew_threshold) / (soft_limit - skew_threshold + 1e-6))
-            skew_amount = clear_width_val * skew_factor
-            if pos > 0:
-                ask_edge -= skew_amount; bid_edge += skew_amount
-            else:
-                bid_edge -= skew_amount; ask_edge += skew_amount
-
-        min_edge = 0.01
-        ask_edge = max(min_edge, ask_edge)
-        bid_edge = max(min_edge, bid_edge)
-
-        is_resin = (product == Product.RAINFOREST_RESIN)
-        round_digits = 4 if is_resin else 2
-        tick_size = 0.0001 if is_resin else 0.01
-
-        default_ask = round(fair_value + ask_edge, round_digits)
-        default_bid = round(fair_value - bid_edge, round_digits)
-        ask, bid = default_ask, default_bid
-
+    def run(self, state: TradingState) -> Tuple[Dict[str, List[Order]], int, str]:
+        # --- Restore state ---
         try:
-            if order_depth.sell_orders:
-                best_ask_in_book = min(order_depth.sell_orders.keys())
-                if best_ask_in_book <= fair_value + join_edge:
-                    ask = min(default_ask, round(best_ask_in_book - tick_size, round_digits))
-            if order_depth.buy_orders:
-                best_bid_in_book = max(order_depth.buy_orders.keys())
-                if best_bid_in_book >= fair_value - join_edge:
-                    bid = max(default_bid, round(best_bid_in_book + tick_size, round_digits))
-        except Exception as e: print(f"Error applying joining logic {product}: {e}")
+            mem = json.loads(state.traderData) if state.traderData else {}
+        except Exception:
+            mem = {}
+        prev_mid: Dict[str, float] = mem.get("prev_mid", {})
+        mom_ema:  Dict[str, float] = mem.get("mom_ema",  {})
 
-        if bid >= ask - tick_size / 2:
-            mid_point = round(fair_value, round_digits)
-            spread = p["default_edge"] * 2
-            bid = round(mid_point - spread / 2, round_digits)
-            ask = round(mid_point + spread / 2, round_digits)
-            if bid >= ask: ask = bid + tick_size
+        # --- Snapshot mids ---
+        mids: Dict[str, float] = {}
+        for sym in ALL_PRODUCTS:
+            d = state.order_depths.get(sym)
+            if d is None:
+                continue
+            m = book_mid(d)
+            if m is not None:
+                mids[sym] = m
 
-        self._market_make(product, orders, bid, ask, pos, buy_volume, sell_volume)
-        return orders
-
-    # Basket Arbitrage - Uses per-basket thresholds
-    def arbitrage_baskets(self, state: TradingState):
-        orders: List[Order] = []
-        order_depths = state.order_depths
-        positions = state.position
-
-        # --- Picnic Basket 1 ---
-        basket1_prod = Product.PICNIC_BASKET1
-        required_comps1 = Product.BASKET1_COMPONENTS
-        component_prods1 = list(required_comps1.keys())
-        threshold1 = self.arbitrage_thresholds[basket1_prod]
-        if basket1_prod in order_depths and all(comp in order_depths for comp in component_prods1):
-            basket1_depth = order_depths[basket1_prod]
-            component_depths1 = {comp: order_depths[comp] for comp in component_prods1}
-            basket1_pos = positions.get(basket1_prod, 0)
-            component_pos1 = {comp: positions.get(comp, 0) for comp in component_prods1}
-
-            if basket1_depth.sell_orders and all(comp in component_depths1 and component_depths1[comp].buy_orders for comp in component_prods1):
-                try:
-                    best_basket1_ask = min(basket1_depth.sell_orders)
-                    best_comp_bids1 = {comp: max(component_depths1[comp].buy_orders) for comp in component_prods1}
-                    comp_sale_value = sum(best_comp_bids1[comp] * qty for comp, qty in required_comps1.items())
-                    potential_profit = comp_sale_value - best_basket1_ask
-                    if potential_profit > threshold1:
-                        basket_ask_vol = -basket1_depth.sell_orders[best_basket1_ask]
-                        comp_bid_vols = {comp: component_depths1[comp].buy_orders[best_comp_bids1[comp]] for comp in component_prods1}
-                        max_vol_from_comps = min(comp_bid_vols[comp] // qty for comp, qty in required_comps1.items() if qty > 0)
-                        max_vol_basket_pos = self.LIMIT[basket1_prod] - basket1_pos
-                        max_vol_comps_pos = min((self.LIMIT[comp] + component_pos1[comp]) // qty for comp, qty in required_comps1.items() if qty > 0)
-                        trade_vol = min(basket_ask_vol, max_vol_from_comps, max_vol_basket_pos, max_vol_comps_pos)
-                        trade_vol = max(0, int(trade_vol))
-                        if trade_vol > 0:
-                            orders.append(Order(basket1_prod, best_basket1_ask, trade_vol))
-                            for comp, qty in required_comps1.items(): orders.append(Order(comp, best_comp_bids1[comp], -trade_vol * qty))
-                except Exception as e: print(f"Error in Buy Basket 1 Arb: {e}")
-
-            if basket1_depth.buy_orders and all(comp in component_depths1 and component_depths1[comp].sell_orders for comp in component_prods1):
-                try:
-                    best_basket1_bid = max(basket1_depth.buy_orders)
-                    best_comp_asks1 = {comp: min(component_depths1[comp].sell_orders) for comp in component_prods1}
-                    comp_buy_cost = sum(best_comp_asks1[comp] * qty for comp, qty in required_comps1.items())
-                    potential_profit = best_basket1_bid - comp_buy_cost
-                    if potential_profit > threshold1:
-                        basket_bid_vol = basket1_depth.buy_orders[best_basket1_bid]
-                        comp_ask_vols = {comp: -component_depths1[comp].sell_orders[best_comp_asks1[comp]] for comp in component_prods1}
-                        max_vol_from_comps = min(comp_ask_vols[comp] // qty for comp, qty in required_comps1.items() if qty > 0)
-                        max_vol_basket_pos = self.LIMIT[basket1_prod] + basket1_pos
-                        max_vol_comps_pos = min((self.LIMIT[comp] - component_pos1[comp]) // qty for comp, qty in required_comps1.items() if qty > 0)
-                        trade_vol = min(basket_bid_vol, max_vol_from_comps, max_vol_basket_pos, max_vol_comps_pos)
-                        trade_vol = max(0, int(trade_vol))
-                        if trade_vol > 0:
-                            orders.append(Order(basket1_prod, best_basket1_bid, -trade_vol))
-                            for comp, qty in required_comps1.items(): orders.append(Order(comp, best_comp_asks1[comp], trade_vol * qty))
-                except Exception as e: print(f"Error in Sell Basket 1 Arb: {e}")
-
-
-        # --- Picnic Basket 2 ---
-        basket2_prod = Product.PICNIC_BASKET2
-        required_comps2 = Product.BASKET2_COMPONENTS
-        component_prods2 = list(required_comps2.keys())
-        threshold2 = self.arbitrage_thresholds[basket2_prod]
-        if basket2_prod in order_depths and all(comp in order_depths for comp in component_prods2):
-            basket2_depth = order_depths[basket2_prod]
-            component_depths2 = {comp: order_depths[comp] for comp in component_prods2}
-            basket2_pos = positions.get(basket2_prod, 0)
-            component_pos2 = {comp: positions.get(comp, 0) for comp in component_prods2}
-
-            if basket2_depth.sell_orders and all(comp in component_depths2 and component_depths2[comp].buy_orders for comp in component_prods2):
-                try:
-                    best_basket2_ask = min(basket2_depth.sell_orders)
-                    best_comp_bids2 = {comp: max(component_depths2[comp].buy_orders) for comp in component_prods2}
-                    comp_sale_value = sum(best_comp_bids2[comp] * qty for comp, qty in required_comps2.items())
-                    potential_profit = comp_sale_value - best_basket2_ask
-                    if potential_profit > threshold2:
-                        basket_ask_vol = -basket2_depth.sell_orders[best_basket2_ask]
-                        comp_bid_vols = {comp: component_depths2[comp].buy_orders[best_comp_bids2[comp]] for comp in component_prods2}
-                        max_vol_from_comps = min(comp_bid_vols[comp] // qty for comp, qty in required_comps2.items() if qty > 0)
-                        max_vol_basket_pos = self.LIMIT[basket2_prod] - basket2_pos
-                        max_vol_comps_pos = min((self.LIMIT[comp] + component_pos2[comp]) // qty for comp, qty in required_comps2.items() if qty > 0)
-                        trade_vol = min(basket_ask_vol, max_vol_from_comps, max_vol_basket_pos, max_vol_comps_pos)
-                        trade_vol = max(0, int(trade_vol))
-                        if trade_vol > 0:
-                            orders.append(Order(basket2_prod, best_basket2_ask, trade_vol))
-                            for comp, qty in required_comps2.items(): orders.append(Order(comp, best_comp_bids2[comp], -trade_vol * qty))
-                except Exception as e: print(f"Error in Buy Basket 2 Arb: {e}")
-
-            if basket2_depth.buy_orders and all(comp in component_depths2 and component_depths2[comp].sell_orders for comp in component_prods2):
-                try:
-                    best_basket2_bid = max(basket2_depth.buy_orders)
-                    best_comp_asks2 = {comp: min(component_depths2[comp].sell_orders) for comp in component_prods2}
-                    comp_buy_cost = sum(best_comp_asks2[comp] * qty for comp, qty in required_comps2.items())
-                    potential_profit = best_basket2_bid - comp_buy_cost
-                    if potential_profit > threshold2:
-                        basket_bid_vol = basket2_depth.buy_orders[best_basket2_bid]
-                        comp_ask_vols = {comp: -component_depths2[comp].sell_orders[best_comp_asks2[comp]] for comp in component_prods2}
-                        max_vol_from_comps = min(comp_ask_vols[comp] // qty for comp, qty in required_comps2.items() if qty > 0)
-                        max_vol_basket_pos = self.LIMIT[basket2_prod] + basket2_pos
-                        max_vol_comps_pos = min((self.LIMIT[comp] - component_pos2[comp]) // qty for comp, qty in required_comps2.items() if qty > 0)
-                        trade_vol = min(basket_bid_vol, max_vol_from_comps, max_vol_basket_pos, max_vol_comps_pos)
-                        trade_vol = max(0, int(trade_vol))
-                        if trade_vol > 0:
-                            orders.append(Order(basket2_prod, best_basket2_bid, -trade_vol))
-                            for comp, qty in required_comps2.items(): orders.append(Order(comp, best_comp_asks2[comp], trade_vol * qty))
-                except Exception as e: print(f"Error in Sell Basket 2 Arb: {e}")
-        return orders
-
-
-    # Main Run Function
-    def run(self, state: TradingState):
-        self._load_trader_data(state.traderData)
-        result: Dict[str, List[Order]] = {product: [] for product in Product.ALL}
-        self.current_fair_values = {}
-
-        # Calculate Fair Values (Components first, then Baskets)
-        component_products = set(Product.BASKET1_COMPONENTS.keys()) | set(Product.BASKET2_COMPONENTS.keys())
-        other_mm_products = [p for p in Product.MARKET_MAKING_PRODUCTS if p not in component_products]
-        for product in list(component_products) + other_mm_products:
-            if product in state.order_depths: self._update_fair_value(product, state)
-        for product in Product.BASKET_PRODUCTS:
-            if product in state.order_depths: self._update_fair_value(product, state)
-
-        # --- Market Making Strategies ---
-
-        # Market Making for KELP
-        product = Product.KELP
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-            trend_orders = self._trend_follow(product, state)
-            result[product].extend(trend_orders)
-
-        # Market Making for RAINFOREST_RESIN
-        product = Product.RAINFOREST_RESIN
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-            trend_orders = self._trend_follow(product, state)
-            result[product].extend(trend_orders)
-
-        # Market Making for SQUID_INK
-        product = Product.SQUID_INK
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-            trend_orders = self._trend_follow(product, state)
-            result[product].extend(trend_orders)
-
-        # Market Making for CROISSANTS
-        product = Product.CROISSANTS
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-            trend_orders = self._trend_follow(product, state)
-            result[product].extend(trend_orders)
-
-        # Market Making for JAMS
-        product = Product.JAMS
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-            trend_orders = self._trend_follow(product, state)
-            result[product].extend(trend_orders)
-
-        # Market Making for DJEMBE
-        product = Product.DJEMBE
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-            trend_orders = self._trend_follow(product, state)
-            result[product].extend(trend_orders)
-
-        # Market Making for PICNIC_BASKET1
-        product = Product.PICNIC_BASKET1
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-
-        # Market Making for PICNIC_BASKET2
-        product = Product.PICNIC_BASKET2
-        if product in state.order_depths and product in self.current_fair_values:
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            p_params = self.params[product]
-            fair_value = self.current_fair_values[product]
-            mm_orders_take = []
-            buy_vol_take, sell_vol_take = self._take_best_orders(product, fair_value, p_params["take_width"], mm_orders_take, order_depth, position)
-            result[product].extend(mm_orders_take)
-            mm_orders_make = self._make_orders(product, order_depth, fair_value, position, buy_vol_take, sell_vol_take)
-            result[product].extend(mm_orders_make)
-
-        # --- Basket Arbitrage Strategies ---
-
-        # Basket Arbitrage for PICNIC_BASKET1 and PICNIC_BASKET2
-        arbitrage_orders = self.arbitrage_baskets(state)
-        for order in arbitrage_orders:
-            if order.symbol in result:
-                result[order.symbol].append(order)
+        # --- Update momentum EWMA ---
+        alpha = 2.0 / (MOM_SPAN + 1)
+        for sym, m in mids.items():
+            if sym in prev_mid:
+                ret = m - prev_mid[sym]
+                mom_ema[sym] = (1 - alpha) * mom_ema.get(sym, 0.0) + alpha * ret
             else:
-                print(f"Warning: Arbitrage order generated for unexpected product symbol '{order.symbol}'. Discarding.")
+                mom_ema.setdefault(sym, 0.0)
 
-        traderData = self._save_trader_data()
-        conversions = 0
-        return result, conversions, traderData
+        # --- Build fair values ---
+        fair: Dict[str, float] = {}
+
+        # PEBBLES basket: attribute residual to XL (the noisy leg)
+        if all(p in mids for p in PEBBLES):
+            R = sum(mids[p] for p in PEBBLES) - PEBBLES_TARGET_SUM
+            fair[PEBBLES_NOISY_LEG] = mids[PEBBLES_NOISY_LEG] - R
+            for p in PEBBLES:
+                if p == PEBBLES_NOISY_LEG:
+                    continue
+                fair[p] = mids[p]
+
+        # AR1-corrected fair for the 3 validated products
+        for sym, m in mids.items():
+            if sym in fair:
+                continue
+            if sym in AR1_PRODUCTS and sym in prev_mid:
+                phi = AR1_PRODUCTS[sym]
+                fair[sym] = m + phi * (m - prev_mid[sym])
+            else:
+                fair[sym] = m
+
+        # --- Generate orders ---
+        result: Dict[str, List[Order]] = {}
+        for sym in ALL_PRODUCTS:
+            if sym not in fair:
+                continue
+            d = state.order_depths.get(sym)
+            if d is None:
+                continue
+            pos = state.position.get(sym, 0)
+            f = fair[sym]
+            bb, bv, ba, av = best_bid_ask(d)
+            if bb is None or ba is None or ba <= bb:
+                continue
+
+            # Inventory-skew the fair (push toward zero position)
+            f_eff = f - INVENTORY_SKEW_PER_UNIT * pos
+            total = bv + av
+            imb = (bv - av) / total if total > 0 else 0.0  # >0 = bid-heavy
+            mom = mom_ema.get(sym, 0.0)
+
+            buy_cap  = POSITION_LIMIT - pos
+            sell_cap = POSITION_LIMIT + pos
+            orders: List[Order] = []
+
+            # PEBBLES_XL aggressive take from basket residual
+            if sym == PEBBLES_NOISY_LEG:
+                if buy_cap > 0 and ba <= f_eff - BASKET_TAKE_EDGE:
+                    q = min(buy_cap, av)
+                    if q > 0:
+                        orders.append(Order(sym, ba, q))
+                        buy_cap -= q
+                if sell_cap > 0 and bb >= f_eff + BASKET_TAKE_EDGE:
+                    q = min(sell_cap, bv)
+                    if q > 0:
+                        orders.append(Order(sym, bb, -q))
+                        sell_cap -= q
+
+            # --- Decide which sides we may quote on ---
+            allow_bid = True
+            allow_ask = True
+
+            # Asymmetric imbalance gate: only block side that would INCREASE |pos|
+            if pos >= 0 and imb >= IMBALANCE_THRESHOLD:
+                allow_bid = False  # bid-heavy + we're long — stop adding length
+            if pos <= 0 and imb <= -IMBALANCE_THRESHOLD:
+                allow_ask = False
+
+            # Momentum gate: block the side facing the trend
+            if mom > MOM_THRESHOLD_TICKS:
+                allow_bid = False
+            elif mom < -MOM_THRESHOLD_TICKS:
+                allow_ask = False
+
+            # --- Place quotes one tick inside L1 ---
+            quote_bid = quote_ask = None
+            if allow_bid and buy_cap > 0:
+                p = min(bb + PASSIVE_INSIDE_TICKS, math.floor(f_eff - 1))
+                p = min(p, ba - 1)
+                if p >= bb and p > 0:
+                    quote_bid = p
+            if allow_ask and sell_cap > 0:
+                p = max(ba - PASSIVE_INSIDE_TICKS, math.ceil(f_eff + 1))
+                p = max(p, bb + 1)
+                if p <= ba:
+                    quote_ask = p
+
+            if quote_bid is not None:
+                size = min(PASSIVE_QUOTE_SIZE, buy_cap)
+                if size > 0:
+                    orders.append(Order(sym, int(quote_bid), size))
+            if quote_ask is not None:
+                size = min(PASSIVE_QUOTE_SIZE, sell_cap)
+                if size > 0:
+                    orders.append(Order(sym, int(quote_ask), -size))
+
+            if orders:
+                result[sym] = orders
+
+        # --- Persist state ---
+        new_prev_mid = {p: mids[p] for p in mids}
+        return (result, 0,
+                json.dumps({"prev_mid": new_prev_mid, "mom_ema": mom_ema},
+                           separators=(",", ":")))
