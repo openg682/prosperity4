@@ -1,0 +1,69 @@
+{
+  "n_observations": 1496950,
+  "n_features_initial": 53,
+  "n_features_selected": 27,
+  "cv_folds": 5,
+  "target_horizon_bars": 1,
+  "oof_mae": 0.0008758220165096236,
+  "oof_information_coef": 0.056034466280475086,
+  "oof_information_ratio": 0.012701670697167135,
+  "oof_hit_rate": 0.48096564605536873,
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "n_train": 249495,
+      "n_test": 249491,
+      "mae": 0.0008716909176232477,
+      "rmse": 0.0011418701549793064,
+      "information_coef": 0.02624463374312885,
+      "information_ratio": 0.008558730195453756,
+      "sharpe_per_bar": 0.008558730195453756,
+      "hit_rate": 0.4808109310556293
+    },
+    {
+      "fold": 2,
+      "n_train": 498986,
+      "n_test": 249491,
+      "mae": 0.0008686203927487999,
+      "rmse": 0.0011363524689940489,
+      "information_coef": 0.027670852330625363,
+      "information_ratio": 0.010327846172555452,
+      "sharpe_per_bar": 0.010327846172555452,
+      "hit_rate": 0.485328128068748
+    },
+    {
+      "fold": 3,
+      "n_train": 748477,
+      "n_test": 249491,
+      "mae": 0.0008754229492444911,
+      "rmse": 0.0011495360507440438,
+      "information_coef": 0.0276761131836099,
+      "information_ratio": 0.009554732451294895,
+      "sharpe_per_bar": 0.009554732451294895,
+      "hit_rate": 0.48463070812173586
+    },
+    {
+      "fold": 4,
+      "n_train": 997968,
+      "n_test": 249491,
+      "mae": 0.000879100042837218,
+      "rmse": 0.0011907752553602686,
+      "information_coef": 0.08123790168621511,
+      "information_ratio": 0.01634804645635947,
+      "sharpe_per_bar": 0.01634804645635947,
+      "hit_rate": 0.47883089971181325
+    },
+    {
+      "fold": 5,
+      "n_train": 1247459,
+      "n_test": 249491,
+      "mae": 0.0008842757800943598,
+      "rmse": 0.0012081958428117718,
+      "information_coef": 0.09021724550755512,
+      "information_ratio": 0.018231896454477692,
+      "sharpe_per_bar": 0.018231896454477692,
+      "hit_rate": 0.4752275633189173
+    }
+  ],
+  "note": "IR / Sharpe are reported per-bar.  To annualize, multiply by sqrt(bars_per_year).  Avoid relying on directional Sharpe alone \u2014 IC is the more honest skill metric."
+}
