@@ -25,7 +25,7 @@ TRADE_FILES = [
     "../../../Files/Trades/trades_round_4_day_3.csv",
 ]
 #change bot over here
-FOCUS_BOT  = "Mark 67"
+FOCUS_BOT  = "Mark 38"
 DAY_TICKS  = 1_000_000
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
