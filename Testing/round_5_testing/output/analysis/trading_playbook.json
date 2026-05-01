@@ -1,0 +1,40 @@
+{
+  "ROBOT_DISHES": {
+    "category": "ROBOT",
+    "tier": "TIER1_STRONG",
+    "ic": 0.2585,
+    "ar1_phi_empirical": -0.236,
+    "ar1_phi_for_bot": -0.23,
+    "hit_rate": 0.3534,
+    "ir_per_bar": 0.095747,
+    "strategy": "AR1_MEAN_REVERSION",
+    "cat_avg_corr": -0.0017,
+    "pair_partners": [],
+    "resid_partners": [
+      {
+        "partner": "ROBOT_IRONING",
+        "resid_corr": -0.3933
+      },
+      {
+        "partner": "ROBOT_MOPPING",
+        "resid_corr": -0.3917
+      }
+    ],
+    "basket_strategy": {
+      "members": [
+        "ROBOT_DISHES",
+        "ROBOT_IRONING",
+        "ROBOT_LAUNDRY",
+        "ROBOT_MOPPING",
+        "ROBOT_VACUUMING"
+      ],
+      "hedge_ratios": {
+        "ROBOT_DISHES": 1.0,
+        "ROBOT_IRONING": 0.192648,
+        "ROBOT_LAUNDRY": 0.544256,
+        "ROBOT_MOPPING": 0.636585,
+        "ROBOT_VACUUMING": 0.414664
+      },
+      "half_life_bars": 164.4,
+      "adf_pval_spread": 8e-06,
+      "spread_stationary": 

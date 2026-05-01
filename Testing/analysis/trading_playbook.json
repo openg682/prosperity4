@@ -1,0 +1,734 @@
+{
+  "ROBOT_DISHES": {
+    "category": "ROBOT",
+    "tier": "TIER1_STRONG",
+    "ic": 0.2585,
+    "ar1_phi_empirical": -0.236,
+    "ar1_phi_for_bot": -0.23,
+    "hit_rate": 0.3534,
+    "ir_per_bar": 0.095747,
+    "strategy": "AR1_MEAN_REVERSION",
+    "note": "Strong AR1 (phi=-0.236) + high IC=0.258. Use ML alpha.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.0017
+  },
+  "OXYGEN_SHAKE_CHOCOLATE": {
+    "category": "OXYGEN_SHAKE",
+    "tier": "TIER1_STRONG",
+    "ic": 0.1423,
+    "ar1_phi_empirical": -0.0686,
+    "ar1_phi_for_bot": -0.09,
+    "hit_rate": 0.4527,
+    "ir_per_bar": 0.033861,
+    "strategy": "ML_ALPHA_ONLY",
+    "note": "High IC=0.142 without strong AR1. ML signal is orthogonal \u2014 pair coupling likely.",
+    "pair_partners": [
+      {
+        "partner": "OXYGEN_SHAKE_GARLIC",
+        "adf_pval": 0.0036879402506846543,
+        "ret_corr": 0.006677424183977655
+      }
+    ],
+    "cat_avg_corr": 0.0074
+  },
+  "SNACKPACK_PISTACHIO": {
+    "category": "SNACKPACK",
+    "tier": "TIER1_STRONG",
+    "ic": 0.1302,
+    "ar1_phi_empirical": -0.0226,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4858,
+    "ir_per_bar": 0.029715,
+    "strategy": "ML_ALPHA_ONLY",
+    "note": "High IC=0.130 without strong AR1. ML signal is orthogonal \u2014 pair coupling likely.",
+    "pair_partners": [
+      {
+        "partner": "SNACKPACK_CHOCOLATE",
+        "adf_pval": 0.013050933609501748,
+        "ret_corr": 0.022301905879506038
+      }
+    ],
+    "cat_avg_corr": -0.1589
+  },
+  "SNACKPACK_CHOCOLATE": {
+    "category": "SNACKPACK",
+    "tier": "TIER1_STRONG",
+    "ic": 0.1206,
+    "ar1_phi_empirical": -0.032,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4913,
+    "ir_per_bar": 0.021554,
+    "strategy": "ML_ALPHA_ONLY",
+    "note": "High IC=0.121 without strong AR1. ML signal is orthogonal \u2014 pair coupling likely.",
+    "pair_partners": [
+      {
+        "partner": "SNACKPACK_PISTACHIO",
+        "adf_pval": 0.013050933609501748,
+        "ret_corr": 0.022301905879506038
+      }
+    ],
+    "cat_avg_corr": -0.1589
+  },
+  "SNACKPACK_VANILLA": {
+    "category": "SNACKPACK",
+    "tier": "TIER1_STRONG",
+    "ic": 0.1159,
+    "ar1_phi_empirical": -0.0267,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.491,
+    "ir_per_bar": 0.026998,
+    "strategy": "ML_ALPHA_ONLY",
+    "note": "High IC=0.116 without strong AR1. ML signal is orthogonal \u2014 pair coupling likely.",
+    "pair_partners": [
+      {
+        "partner": "SNACKPACK_RASPBERRY",
+        "adf_pval": 0.004278683123438929,
+        "ret_corr": 0.013464854619476963
+      }
+    ],
+    "cat_avg_corr": -0.1589
+  },
+  "SNACKPACK_RASPBERRY": {
+    "category": "SNACKPACK",
+    "tier": "TIER1_STRONG",
+    "ic": 0.1038,
+    "ar1_phi_empirical": -0.0179,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4964,
+    "ir_per_bar": 0.023977,
+    "strategy": "ML_ALPHA_ONLY",
+    "note": "High IC=0.104 without strong AR1. ML signal is orthogonal \u2014 pair coupling likely.",
+    "pair_partners": [
+      {
+        "partner": "SNACKPACK_VANILLA",
+        "adf_pval": 0.004278683123438929,
+        "ret_corr": 0.013464854619476963
+      }
+    ],
+    "cat_avg_corr": -0.1589
+  },
+  "SNACKPACK_STRAWBERRY": {
+    "category": "SNACKPACK",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0817,
+    "ar1_phi_empirical": -0.0139,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4863,
+    "ir_per_bar": 0.013698,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.082, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.1589
+  },
+  "ROBOT_IRONING": {
+    "category": "ROBOT",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0771,
+    "ar1_phi_empirical": -0.0992,
+    "ar1_phi_for_bot": -0.13,
+    "hit_rate": 0.3306,
+    "ir_per_bar": 0.066387,
+    "strategy": "AR1_PASSIVE_MM",
+    "note": "Moderate AR1 (phi=-0.099), IC=0.077. Passive MM with AR1 fair correction.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.0017
+  },
+  "OXYGEN_SHAKE_EVENING_BREATH": {
+    "category": "OXYGEN_SHAKE",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0728,
+    "ar1_phi_empirical": -0.0861,
+    "ar1_phi_for_bot": -0.12,
+    "hit_rate": 0.3378,
+    "ir_per_bar": 0.053537,
+    "strategy": "AR1_PASSIVE_MM",
+    "note": "Moderate AR1 (phi=-0.086), IC=0.073. Passive MM with AR1 fair correction.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0074
+  },
+  "OXYGEN_SHAKE_GARLIC": {
+    "category": "OXYGEN_SHAKE",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0617,
+    "ar1_phi_empirical": -0.0075,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4929,
+    "ir_per_bar": 0.008148,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.062, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [
+      {
+        "partner": "OXYGEN_SHAKE_CHOCOLATE",
+        "adf_pval": 0.0036879402506846543,
+        "ret_corr": 0.006677424183977655
+      }
+    ],
+    "cat_avg_corr": 0.0074
+  },
+  "UV_VISOR_MAGENTA": {
+    "category": "UV_VISOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0597,
+    "ar1_phi_empirical": -0.005,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4914,
+    "ir_per_bar": 0.012034,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.060, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [
+      {
+        "partner": "UV_VISOR_RED",
+        "adf_pval": 0.0020754286387126646,
+        "ret_corr": 0.0019889810374836086
+      },
+      {
+        "partner": "UV_VISOR_YELLOW",
+        "adf_pval": 0.0026639542371409137,
+        "ret_corr": 0.00917901816608244
+      }
+    ],
+    "cat_avg_corr": 0.0062
+  },
+  "UV_VISOR_ORANGE": {
+    "category": "UV_VISOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0582,
+    "ar1_phi_empirical": 0.0022,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4905,
+    "ir_per_bar": 0.004575,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.058, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0062
+  },
+  "UV_VISOR_RED": {
+    "category": "UV_VISOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0581,
+    "ar1_phi_empirical": -0.0076,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4913,
+    "ir_per_bar": 0.011671,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.058, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [
+      {
+        "partner": "UV_VISOR_MAGENTA",
+        "adf_pval": 0.0020754286387126646,
+        "ret_corr": 0.0019889810374836086
+      },
+      {
+        "partner": "UV_VISOR_AMBER",
+        "adf_pval": 0.011540202405038648,
+        "ret_corr": -0.0002660568215094892
+      }
+    ],
+    "cat_avg_corr": 0.0062
+  },
+  "GALAXY_SOUNDS_SOLAR_WINDS": {
+    "category": "GALAXY_SOUNDS",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0575,
+    "ar1_phi_empirical": -0.0054,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4978,
+    "ir_per_bar": 0.020134,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.058, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0053
+  },
+  "GALAXY_SOUNDS_PLANETARY_RINGS": {
+    "category": "GALAXY_SOUNDS",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0559,
+    "ar1_phi_empirical": -0.0012,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.488,
+    "ir_per_bar": 0.000742,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.056, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0053
+  },
+  "UV_VISOR_YELLOW": {
+    "category": "UV_VISOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0551,
+    "ar1_phi_empirical": -0.0006,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4873,
+    "ir_per_bar": -0.001155,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.055, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [
+      {
+        "partner": "UV_VISOR_MAGENTA",
+        "adf_pval": 0.0026639542371409137,
+        "ret_corr": 0.00917901816608244
+      }
+    ],
+    "cat_avg_corr": 0.0062
+  },
+  "GALAXY_SOUNDS_SOLAR_FLAMES": {
+    "category": "GALAXY_SOUNDS",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.053,
+    "ar1_phi_empirical": -0.0136,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4963,
+    "ir_per_bar": 0.014945,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.053, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0053
+  },
+  "OXYGEN_SHAKE_MINT": {
+    "category": "OXYGEN_SHAKE",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0518,
+    "ar1_phi_empirical": -0.0067,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.492,
+    "ir_per_bar": 0.010835,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.052, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0074
+  },
+  "OXYGEN_SHAKE_MORNING_BREATH": {
+    "category": "OXYGEN_SHAKE",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0517,
+    "ar1_phi_empirical": -0.0061,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4945,
+    "ir_per_bar": 0.01274,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.052, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0074
+  },
+  "GALAXY_SOUNDS_BLACK_HOLES": {
+    "category": "GALAXY_SOUNDS",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0513,
+    "ar1_phi_empirical": -0.0182,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4904,
+    "ir_per_bar": 0.004891,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.051, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0053
+  },
+  "PANEL_1X2": {
+    "category": "PANEL",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0504,
+    "ar1_phi_empirical": -0.0055,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4886,
+    "ir_per_bar": 0.008935,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.050, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0052
+  },
+  "GALAXY_SOUNDS_DARK_MATTER": {
+    "category": "GALAXY_SOUNDS",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0497,
+    "ar1_phi_empirical": -0.0147,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4922,
+    "ir_per_bar": 0.007353,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.050, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0053
+  },
+  "TRANSLATOR_VOID_BLUE": {
+    "category": "TRANSLATOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0483,
+    "ar1_phi_empirical": -0.0098,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.496,
+    "ir_per_bar": 0.018005,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.048, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0046
+  },
+  "SLEEP_POD_COTTON": {
+    "category": "SLEEP_POD",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.048,
+    "ar1_phi_empirical": -0.0047,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4934,
+    "ir_per_bar": 0.014337,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.048, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0029
+  },
+  "SLEEP_POD_NYLON": {
+    "category": "SLEEP_POD",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0454,
+    "ar1_phi_empirical": -0.0003,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4911,
+    "ir_per_bar": 0.007667,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.045, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [
+      {
+        "partner": "SLEEP_POD_LAMB_WOOL",
+        "adf_pval": 0.005894696852392815,
+        "ret_corr": 0.0070931107946806396
+      }
+    ],
+    "cat_avg_corr": 0.0029
+  },
+  "UV_VISOR_AMBER": {
+    "category": "UV_VISOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0428,
+    "ar1_phi_empirical": 0.0018,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4801,
+    "ir_per_bar": 0.000757,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.043, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [
+      {
+        "partner": "UV_VISOR_RED",
+        "adf_pval": 0.011540202405038648,
+        "ret_corr": -0.0002660568215094892
+      }
+    ],
+    "cat_avg_corr": 0.0062
+  },
+  "TRANSLATOR_GRAPHITE_MIST": {
+    "category": "TRANSLATOR",
+    "tier": "TIER2_MODERATE",
+    "ic": 0.0417,
+    "ar1_phi_empirical": -0.0044,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4946,
+    "ir_per_bar": 0.010092,
+    "strategy": "PASSIVE_MM_IMBALANCE",
+    "note": "IC=0.042, weak AR1. Standard passive MM with imbalance gate.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0046
+  },
+  "TRANSLATOR_SPACE_GRAY": {
+    "category": "TRANSLATOR",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0397,
+    "ar1_phi_empirical": 0.0053,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4889,
+    "ir_per_bar": 0.014207,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0046
+  },
+  "PANEL_2X4": {
+    "category": "PANEL",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0389,
+    "ar1_phi_empirical": 0.0035,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4953,
+    "ir_per_bar": 0.016673,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0052
+  },
+  "TRANSLATOR_ASTRO_BLACK": {
+    "category": "TRANSLATOR",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0387,
+    "ar1_phi_empirical": -0.0065,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4887,
+    "ir_per_bar": 0.004095,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0046
+  },
+  "TRANSLATOR_ECLIPSE_CHARCOAL": {
+    "category": "TRANSLATOR",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0383,
+    "ar1_phi_empirical": -0.0089,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4859,
+    "ir_per_bar": 0.010256,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0046
+  },
+  "SLEEP_POD_SUEDE": {
+    "category": "SLEEP_POD",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0379,
+    "ar1_phi_empirical": -0.0052,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.487,
+    "ir_per_bar": 0.012158,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0029
+  },
+  "SLEEP_POD_POLYESTER": {
+    "category": "SLEEP_POD",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0372,
+    "ar1_phi_empirical": -0.0016,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4933,
+    "ir_per_bar": 0.008131,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0029
+  },
+  "PANEL_2X2": {
+    "category": "PANEL",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0316,
+    "ar1_phi_empirical": -0.0115,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4862,
+    "ir_per_bar": 0.003608,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0052
+  },
+  "ROBOT_VACUUMING": {
+    "category": "ROBOT",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0311,
+    "ar1_phi_empirical": -0.0094,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4909,
+    "ir_per_bar": 0.01378,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.0017
+  },
+  "PANEL_1X4": {
+    "category": "PANEL",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0305,
+    "ar1_phi_empirical": -0.0022,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4865,
+    "ir_per_bar": 0.003131,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0052
+  },
+  "MICROCHIP_CIRCLE": {
+    "category": "MICROCHIP",
+    "tier": "TIER3_WEAK",
+    "ic": 0.03,
+    "ar1_phi_empirical": -0.0079,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4847,
+    "ir_per_bar": 0.005441,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0071
+  },
+  "SLEEP_POD_LAMB_WOOL": {
+    "category": "SLEEP_POD",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0295,
+    "ar1_phi_empirical": 0.0046,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4895,
+    "ir_per_bar": 0.005604,
+    "strategy": "PAIRS_TRADE",
+    "note": "Low solo IC=0.030 but cointegrated pairs found. Focus on spread.",
+    "pair_partners": [
+      {
+        "partner": "SLEEP_POD_NYLON",
+        "adf_pval": 0.005894696852392815,
+        "ret_corr": 0.0070931107946806396
+      }
+    ],
+    "cat_avg_corr": 0.0029
+  },
+  "PANEL_4X4": {
+    "category": "PANEL",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0278,
+    "ar1_phi_empirical": -0.0122,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4872,
+    "ir_per_bar": 0.00621,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0052
+  },
+  "PEBBLES_L": {
+    "category": "PEBBLES",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0239,
+    "ar1_phi_empirical": 0.0084,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4959,
+    "ir_per_bar": 0.00347,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.1932
+  },
+  "PEBBLES_S": {
+    "category": "PEBBLES",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0174,
+    "ar1_phi_empirical": 0.0093,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4958,
+    "ir_per_bar": 0.00712,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.1932
+  },
+  "ROBOT_MOPPING": {
+    "category": "ROBOT",
+    "tier": "TIER3_WEAK",
+    "ic": 0.017,
+    "ar1_phi_empirical": -0.0127,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4907,
+    "ir_per_bar": 0.009705,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.0017
+  },
+  "MICROCHIP_OVAL": {
+    "category": "MICROCHIP",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0157,
+    "ar1_phi_empirical": -0.008,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4882,
+    "ir_per_bar": -0.006064,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0071
+  },
+  "PEBBLES_XL": {
+    "category": "PEBBLES",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0146,
+    "ar1_phi_empirical": 0.0086,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4996,
+    "ir_per_bar": 0.009132,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.1932
+  },
+  "ROBOT_LAUNDRY": {
+    "category": "ROBOT",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0124,
+    "ar1_phi_empirical": 0.0091,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.491,
+    "ir_per_bar": 0.000506,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.0017
+  },
+  "MICROCHIP_TRIANGLE": {
+    "category": "MICROCHIP",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0116,
+    "ar1_phi_empirical": -0.0101,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4896,
+    "ir_per_bar": 0.00528,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0071
+  },
+  "PEBBLES_XS": {
+    "category": "PEBBLES",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0115,
+    "ar1_phi_empirical": -0.0196,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4916,
+    "ir_per_bar": 0.004788,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.1932
+  },
+  "MICROCHIP_RECTANGLE": {
+    "category": "MICROCHIP",
+    "tier": "TIER3_WEAK",
+    "ic": 0.0107,
+    "ar1_phi_empirical": -0.0033,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4864,
+    "ir_per_bar": -0.002362,
+    "strategy": "PASSIVE_MM_TIGHT",
+    "note": "Weak signal. Narrow passive MM, tight inventory limits.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0071
+  },
+  "MICROCHIP_SQUARE": {
+    "category": "MICROCHIP",
+    "tier": "TIER0_NOISE",
+    "ic": 0.0086,
+    "ar1_phi_empirical": -0.0266,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4891,
+    "ir_per_bar": -0.011249,
+    "strategy": "SKIP_OR_MINIMAL",
+    "note": "IC=0.009 near zero. Either skip or trade minimal size.",
+    "pair_partners": [],
+    "cat_avg_corr": 0.0071
+  },
+  "PEBBLES_M": {
+    "category": "PEBBLES",
+    "tier": "TIER0_NOISE",
+    "ic": 0.0081,
+    "ar1_phi_empirical": -0.006,
+    "ar1_phi_for_bot": 0.0,
+    "hit_rate": 0.4926,
+    "ir_per_bar": 0.008435,
+    "strategy": "SKIP_OR_MINIMAL",
+    "note": "IC=0.008 near zero. Either skip or trade minimal size.",
+    "pair_partners": [],
+    "cat_avg_corr": -0.1932
+  }
+}
